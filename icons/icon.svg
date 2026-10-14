@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="银色立方体">
+  <defs>
+    <!-- 顶面：顶部棱偏亮，往前顶角收暗 -->
+    <linearGradient id="top" gradientUnits="userSpaceOnUse" x1="48.2" y1="16" x2="463.8" y2="256">
+      <stop offset="0" stop-color="#e4e4e8"/>
+      <stop offset=".5" stop-color="#d4d4d8"/>
+      <stop offset="1" stop-color="#bcbcc1"/>
+    </linearGradient>
+
+    <!-- 左面：金属竖向反射，亮—暗—高光带—收暗，靠对比做出镜面感 -->
+    <linearGradient id="left" gradientUnits="userSpaceOnUse" x1="0" y1="136" x2="0" y2="496">
+      <stop offset="0" stop-color="#dcdce0"/>
+      <stop offset=".22" stop-color="#aaaab0"/>
+      <stop offset=".48" stop-color="#8e8e94"/>
+      <stop offset=".7" stop-color="#e0e0e4"/>
+      <stop offset=".86" stop-color="#9e9ea4"/>
+      <stop offset="1" stop-color="#7e7e84"/>
+    </linearGradient>
+
+    <!-- 右面：整体比左面沉，上暗下亮 -->
+    <linearGradient id="right" gradientUnits="userSpaceOnUse" x1="0" y1="136" x2="0" y2="496">
+      <stop offset="0" stop-color="#616166"/>
+      <stop offset=".32" stop-color="#7e7e84"/>
+      <stop offset=".68" stop-color="#aaaab0"/>
+      <stop offset="1" stop-color="#d2d2d7"/>
+    </linearGradient>
+
+    <!-- 落地接触阴影：越靠底越沉，把立方体压住 -->
+    <linearGradient id="foot" gradientUnits="userSpaceOnUse" x1="0" y1="136" x2="0" y2="496">
+      <stop offset="0" stop-color="#1c1c20" stop-opacity="0"/>
+      <stop offset=".56" stop-color="#1c1c20" stop-opacity="0"/>
+      <stop offset="1" stop-color="#1c1c20" stop-opacity=".28"/>
+    </linearGradient>
+
+    <!-- 右面右侧竖向边光 -->
+    <linearGradient id="rim" gradientUnits="userSpaceOnUse" x1="256" y1="0" x2="463.8" y2="0">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset=".74" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity=".3"/>
+    </linearGradient>
+
+    <!-- 左面左侧离光的一侧压暗 -->
+    <linearGradient id="shade" gradientUnits="userSpaceOnUse" x1="48.2" y1="0" x2="256" y2="0">
+      <stop offset="0" stop-color="#3c3c40" stop-opacity=".18"/>
+      <stop offset=".6" stop-color="#3c3c40" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 三个面：等轴测立方体，透明底 -->
+  <g>
+    <path d="M256 16 L463.8 136 L256 256 L48.2 136 Z" fill="url(#top)"/>
+    <path d="M48.2 136 L256 256 L256 496 L48.2 376 Z" fill="url(#left)"/>
+    <path d="M256 256 L463.8 136 L463.8 376 L256 496 Z" fill="url(#right)"/>
+    <path d="M256 16 L463.8 136 L463.8 376 L256 496 L48.2 376 L48.2 136 Z" fill="url(#foot)"/>
+    <path d="M256 256 L463.8 136 L463.8 376 L256 496 Z" fill="url(#rim)"/>
+    <path d="M48.2 136 L256 256 L256 496 L48.2 376 Z" fill="url(#shade)"/>
+  </g>
+
+  <!-- 棱线：顶面左棱补高光，三条内部接缝压暗，外轮廓收一圈淡边 -->
+  <g fill="none" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M256 16 L48.2 136" stroke="#ffffff" stroke-opacity=".45" stroke-width="2.5"/>
+    <path d="M48.2 136 L256 256 L463.8 136" stroke="#6a6a70" stroke-opacity=".5" stroke-width="2.5"/>
+    <path d="M256 256 L256 496" stroke="#6a6a70" stroke-opacity=".45" stroke-width="2.5"/>
+    <path d="M256 16 L463.8 136 L463.8 376 L256 496 L48.2 376 L48.2 136 Z"
+          stroke="#2b2d32" stroke-opacity=".42" stroke-width="5"/>
+  </g>
+</svg>

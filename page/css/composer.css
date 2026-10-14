@@ -1,0 +1,446 @@
+/* ============================================================
+   输入区：输入框 + 工具栏（附件 / 图片 / 技能 / 权限 / 模型 / 发送）
+   窄宽度下工具栏不换行，可压缩项一律 min-width: 0
+   ============================================================ */
+
+.composer-box {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-input);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 8px 8px 6px;
+  transition: border-color var(--dur);
+}
+.composer-box:focus-within { border-color: var(--line-strong); }
+
+.composer-box textarea {
+  width: 100%;
+  max-height: 120px;
+  min-height: 22px;
+  padding: 2px 4px 8px;
+  background: transparent;
+  border: 0;
+  outline: none;
+  resize: none;
+  overflow-y: auto;
+  field-sizing: content; /* 支持时自动增高，否则由 JS 兜底 */
+  line-height: 1.55;
+}
+.composer-box textarea::placeholder { color: var(--fg-faint); }
+
+/* ---------- 待发送图片的缩略条 ---------- */
+
+.attach-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 2px 2px 8px;
+}
+/* 没有待发图片时整条收起：display:flex 会盖掉 UA 的 [hidden]{display:none}，
+   不补这一条，空条的高度（2+8px）会顶在输入框上方，把首行文字压得离上边框很远 */
+.attach-bar[hidden] { display: none; }
+
+.attach-item {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: var(--bg-hover);
+}
+
+.attach-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.attach-x {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.attach-x:hover { background: rgba(0, 0, 0, 0.8); }
+
+/* 划词引用待发卡：与图片缩略图同排，单行文字超出省略 + 移除按钮 */
+.attach-quote {
+  position: relative;
+  max-width: 120px;
+  padding: 4px 24px 4px 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+}
+
+.attach-quote-text {
+  display: block;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--fg-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 单行卡片不高，× 居中比顶头好看 */
+.attach-quote .attach-x {
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+/* ---------- 指令块：/ 菜单选中的指令停在输入框里（见 js/composer.js） ---------- */
+
+.cmd-bar {
+  display: flex;
+  flex-wrap: wrap;
+  padding: 2px 2px 6px;
+}
+.cmd-bar[hidden] { display: none; }
+
+/* 品牌色胶囊 + 等宽 / 徽标：一眼区别于普通文本 */
+.cmd-chip {
+  position: relative; /* 删除钮挂在右上角 */
+  display: inline-flex;
+  align-items: center;
+  margin: 3px 5px 2px 0; /* 右上角挂钮外凸，留出余地不贴边 */
+  padding: 2px; /* 四边同距：徽标是唯一内容，左右不再比上下多留白 */
+  border: 1px solid var(--brand);
+  border-radius: var(--radius-sm); /* 与顶部快捷 chip 同档圆角 */
+  background: var(--brand-soft);
+}
+
+.cmd-chip-tag {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  border-radius: calc(var(--radius-sm) - 3px);
+  background: var(--brand);
+  color: var(--brand-on);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 17px;
+}
+
+/* 删除钮：骑在胶囊右上角的小圆点，悬停变红示警 */
+.cmd-chip-x {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-full);
+  background: var(--bg-hover);
+  color: var(--fg-soft);
+  font-size: 10px;
+  line-height: 12px;
+  text-align: center;
+  cursor: pointer;
+}
+.cmd-chip-x:hover { background: var(--danger); border-color: var(--danger); color: #fff; }
+
+/* ---------- 工具栏 ---------- */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap; /* 面板窄，靠收缩与省略号而不是换行 */
+}
+
+.pill-select {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center; /* 模型名与箭头在胶囊内居中 */
+  gap: 4px;
+  min-width: 0;
+  max-width: 104px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm); /* 与设置页模型行同档圆角，不走全圆胶囊 */
+  color: var(--fg-soft);
+  font-size: 11.5px;
+  transition: background var(--dur), color var(--dur);
+}
+.pill-select:hover { background: var(--bg-hover); color: var(--fg); }
+.pill-select:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+
+.pill-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.caret { flex: 0 0 12px; width: 12px; height: 12px; }
+.pill-select[aria-expanded="true"] .caret { transform: rotate(180deg); }
+
+.pill-ic { flex: 0 0 12px; width: 12px; height: 12px; }
+.pill-ic svg { width: 100%; height: 100%; display: block; }
+.pill-ic:empty { display: none; } /* 未配置模型时收起，不留空隙 */
+
+/* 审批档位是「这条消息会不会被执行」的重要状态，文案固定（需要审批 / 自主审批 / 自动执行）：
+   不参与压缩，在窄面板里也完整显示。整行的压缩量全由模型胶囊吃（模型名可以省略）。 */
+#ddPermission { flex: 0 0 auto; max-width: none; }
+/* 胶囊整体跟着档位的语义色走：需要审批＝绿、自主审批＝蓝、自动执行＝黄（图标 / 文字 / 箭头同色） */
+#ddPermission.tone-ok { color: var(--ok); }
+#ddPermission.tone-brand { color: var(--brand); }
+#ddPermission.tone-warn { color: var(--warn); }
+
+/* ---------- 上下文占用仪表（发送键左侧）：外置百分比 + 圆环进度 ---------- */
+
+.ctx-gauge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 7px;
+  margin-left: auto; /* 剩余空间吃在这，让仪表带着发送键一起贴右 */
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
+  background: none;
+  color: var(--fg-soft);
+  transition: background var(--dur), color var(--dur);
+}
+.ctx-gauge:hover { background: var(--bg-hover); color: var(--fg); }
+.ctx-gauge:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+
+.ctx-gauge svg { flex: 0 0 18px; width: 18px; height: 18px; }
+
+/* 轨道环 + 进度环：dasharray 是 r=15.5 的周长，进度只改 dashoffset（JS），从 12 点方向画起 */
+.cg-track,
+.cg-bar {
+  fill: none;
+  stroke-width: 3.5;
+}
+.cg-track { stroke: var(--line); }
+.cg-bar {
+  stroke: var(--fg); /* 常态白色进度，告警档才换色 */
+  stroke-linecap: round;
+  stroke-dasharray: 97.39;
+  stroke-dashoffset: 97.39;
+  transform: rotate(-90deg);
+  transform-origin: center;
+  transition: stroke-dashoffset var(--dur), stroke var(--dur);
+}
+
+/* 到压缩阈值：琥珀色提醒；满预算：红，更早历史开始被裁。环与文字一起变色 */
+.ctx-gauge.warn { color: #e0a84c; }
+.ctx-gauge.warn .cg-bar { stroke: #e0a84c; }
+.ctx-gauge.full { color: var(--danger); }
+.ctx-gauge.full .cg-bar { stroke: var(--danger); }
+
+.cg-pct {
+  font-size: 11.5px; /* 与工具栏其他文字同档，环心塞不下才挪出来的 */
+  font-variant-numeric: tabular-nums;
+}
+
+.send-btn {
+  /* 贴右的活交给前面的 ctx-gauge（margin-left:auto），两个 auto 会平分空隙把这对拆散 */
+  flex: 0 0 26px;
+  display: grid;
+  place-items: center;
+  width: 26px; height: 26px;
+  border: 1px solid transparent; /* 常态不描边（蓝底已够醒目），禁用态才现身 */
+  border-radius: var(--radius-full);
+  background: var(--brand);
+  color: var(--brand-on);
+  transition: background var(--dur), color var(--dur), border-color var(--dur);
+}
+.send-btn svg { width: 15px; height: 15px; }
+.send-btn:hover { background: var(--brand-deep); border-color: var(--brand-deep); }
+/* 空输入时不往背景里沉：描一圈边、箭头提亮一档，仍看得出是个按钮 */
+.send-btn:disabled {
+  background: var(--line);
+  border-color: var(--line-strong);
+  color: var(--fg-soft);
+  cursor: default;
+}
+.send-btn:disabled:hover { border-color: var(--fg-faint); }
+.send-btn:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+/* 生成中：箭头变方块，键位转为「停止」 */
+.send-btn .ic-stop { display: none; }
+.send-btn.stop .ic-send { display: none; }
+.send-btn.stop .ic-stop { display: block; }
+.send-btn.stop { background: var(--bg-hover); color: var(--fg); }
+.send-btn.stop:hover { background: var(--line); }
+
+/* ---------- 通用下拉浮层（权限 / 模型） ---------- */
+
+.popmenu {
+  position: absolute;
+  z-index: 40;
+  min-width: 88px;
+  max-width: 200px;
+  padding: 3px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--bg-hover);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.popmenu button {
+  padding: 4px 8px;
+  border-radius: 5px;
+  color: var(--fg-soft);
+  font-size: 12px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background var(--dur), color var(--dur);
+}
+/* 浮层底色是 --bg-hover，悬停再给灰阶就看不见了；换成品牌色淡底，一眼能扫到 */
+.popmenu button:hover { background: var(--brand-soft); color: var(--fg); }
+.popmenu button.on { color: var(--brand); }
+
+/* 带图标的选项（权限档位 / 模型）：图标 + 文案左对齐 */
+.popmenu button.with-ic { display: flex; align-items: center; gap: 4px; text-align: left; }
+.popmenu button.with-ic > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.opt-ic { flex: 0 0 12px; display: inline-flex; }
+.opt-ic svg { width: 12px; height: 12px; display: block; }
+/* 带图标的下拉按内容收窄，不留右侧空白（纯文字下拉仍保持原来的居中最小宽度） */
+.popmenu.ic-menu { min-width: 0; }
+
+/* 权限档位按语义上色：需要审批＝绿、自主审批＝蓝、自动执行＝黄；文字与图标（currentColor）同色。
+   放在 hover / .on 之后，保证悬停时也不被改成白字 / 蓝字 */
+.popmenu button.tone-ok { color: var(--ok); }
+.popmenu button.tone-brand { color: var(--brand); }
+.popmenu button.tone-warn { color: var(--warn); }
+/* 选中项改用淡底 + 加粗标识，避免把语义色顶掉 */
+.popmenu button.tone-ok.on,
+.popmenu button.tone-brand.on,
+.popmenu button.tone-warn.on { background: var(--brand-soft); font-weight: 600; }
+
+/* ---------- 功能指令菜单（chips 下拉 / 输入框 "/" 唤起，见 js/commands.js） ---------- */
+
+.cmd-menu {
+  position: absolute;
+  z-index: 40;
+  width: min(252px, calc(100% - 16px));
+  max-height: 264px;
+  overflow-y: auto;
+  scrollbar-width: none; /* 滚轮 / 方向键仍可滚（active 项自动滚进视野），滚动条藏掉更干净 */
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--bg-hover);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.cmd-menu::-webkit-scrollbar { display: none; }
+
+.cmd-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  text-align: left;
+  transition: background var(--dur);
+}
+.cmd-item:hover,
+.cmd-item.active { background: var(--brand-soft); }
+
+.cmd-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.cmd-name { font-size: 12px; color: var(--fg); }
+.cmd-desc {
+  font-size: 11px;
+  color: var(--fg-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 右侧的 / 短名：等宽字体小徽标，提示 "/" 过滤时的关键字 */
+.cmd-slash {
+  flex: 0 0 auto;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--fg-faint);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+/* ---------- 窄宽度：次级按钮收进「更多」 ---------- */
+
+.more-wrap { display: none; position: relative; }
+
+.more-menu {
+  position: absolute;
+  left: 0;
+  bottom: 34px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  background: var(--bg-hover);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  z-index: 20;
+}
+.more-menu[hidden] { display: none; }
+.more-menu button {
+  padding: 6px 10px;
+  border-radius: 6px;
+  color: var(--fg-soft);
+  font-size: 12px;
+  text-align: left;
+  white-space: nowrap;
+  transition: background var(--dur), color var(--dur);
+}
+.more-menu button:hover { background: var(--brand-soft); color: var(--fg); }
+.more-menu button:disabled { opacity: 0.45; cursor: default; }
+.more-menu button:disabled:hover { background: none; color: var(--fg-soft); }
+
+/* 图片按钮只在支持图片理解的模型下可用，其余时候置灰说明原因 */
+.icon-btn:disabled { opacity: 0.4; cursor: default; }
+.icon-btn:disabled:hover,
+.icon-btn:disabled:active { background: none; color: var(--fg-soft); }
+
+/* 偏窄的面板（约 320–420px）：间距与内边距各收紧一档，给审批胶囊腾出完整文案的宽度 */
+
+@container (max-width: 420px) {
+  .toolbar { gap: 4px; }
+  .pill-select { padding: 0 6px; }
+  #ddModel { max-width: 96px; }
+  .ctx-gauge { gap: 4px; padding: 0 5px; }
+}
+
+@container (max-width: 340px) {
+  /* 面板最窄时一行塞不下五个控件：图片 / 截图收进「更多」，
+     只留「更多 · 审批 · 模型 · 占用 · 发送」，审批文案才放得下 */
+  .toolbar > .icon-btn.sm { display: none; }
+  .more-wrap { display: block; }
+  #ddModel { max-width: 88px; }
+}

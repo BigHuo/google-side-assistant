@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "灵阅AI助手",
+  "version": "0.8.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAu031EtR7jcgqWPT0EHSTDLDj8oeZddW4JRPjpJ2FKIpgzK8CY0W6r7LXRE9u+f7FCHmb4hO8eUQKo2TNOFQ89P3O8FD9riwnFav0vHyBXOXgjWn2FWGMG0S1l+v0NOZD9mR4JXfijlUXUr0Nk8GfMfkmPSHFEU/ATZKVuhXfPGtycwyugPULFnoBv3v7+tCOU8fcYmXprU7La4cGlVCmf9HGTJzWshsZ+8qoUyu4PreHxAwFXFclZ8IewN+ZmisLYvpi3miS3AUoLjgOiloL+HJUHa6FGSGyKOHQ6J0hNLceeN/cWb4a2W1o+nCrgWX0kAiCmPAiZtg44X2WIleOGQIDAQAB",
+  "description": "灵阅AI助手｜一键唤起智能侧边栏，与当前网页对话：即时问答、要点提炼、全文翻译，还能代你完成点击、填写等页面操作。",
+  "minimum_chrome_version": "116",
+  "permissions": ["storage", "sidePanel", "debugger", "tabs", "scripting"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content/translate.js"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "browser_specific_settings": {
+    "gecko": { "id": "side-assistant@local" }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "打开灵阅AI助手",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  }
+}

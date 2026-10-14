@@ -1,0 +1,119 @@
+/* ============================================================
+   灵阅AI助手 —— 基础：深色设计变量、重置、滚动条、提示条
+   面板无 theming API，故硬编码深色，保证风格稳定
+   ============================================================ */
+
+:root {
+  color-scheme: dark;
+
+  /* 底色层级：底 → 抬起（卡片/气泡）→ 输入区 */
+  --bg: #131315;
+  --bg-raise: #1c1c1f;
+  --bg-input: #232327;
+  --bg-hover: #2a2a2f;
+
+  --fg: #ececf1;
+  --fg-soft: #9a9aa5;
+  --fg-faint: #6b6b76;
+
+  --line: #2c2c31;
+  --line-strong: #3a3a41;
+
+  --brand: #5b7cfa;
+  --brand-soft: rgba(91, 124, 250, 0.14);
+  --brand-deep: #3f5fe0;
+  --brand-on: #ffffff;
+
+  --danger: #e5645b;
+  --ok: #4ec46f;
+  --warn: #e0a33c;
+
+  --radius-sm: 8px;
+  --radius: 12px;
+  --radius-lg: 16px;
+  --radius-full: 999px;
+
+  --font-body: "Avenir Next", Avenir, "Helvetica Neue", "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+
+  --dur: 0.16s;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body { height: 100%; }
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+
+input, textarea { font: inherit; color: inherit; }
+
+svg { display: block; }
+
+/* 滚动条：贴合深色底 */
+.stage { scrollbar-color: var(--line-strong) transparent; }
+.stage::-webkit-scrollbar { width: 8px; }
+.stage::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: var(--radius-full); }
+.stage::-webkit-scrollbar-track { background: transparent; }
+
+/* 仅供读屏 */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* 轻提示条 */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 92px;
+  transform: translateX(-50%) translateY(6px);
+  max-width: calc(100% - 32px);
+  padding: 7px 14px;
+  background: var(--bg-hover);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-full);
+  color: var(--fg);
+  font-size: 12px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  transition: opacity var(--dur), transform var(--dur);
+  pointer-events: none;
+  z-index: 60;
+}
+.toast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
+/* 带图标（如模型切换的成功提示）：图标与文字同行居中，文字超长也只占一行、超出省略 */
+.toast.with-ic {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.toast.with-ic .toast-text {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.toast-ic {
+  display: inline-flex;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: #2ee66b;
+}
+.toast-ic svg { display: block; width: 100%; height: 100%; }

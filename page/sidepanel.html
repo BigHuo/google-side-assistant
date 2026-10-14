@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="color-scheme" content="dark">
+  <title>灵阅AI助手</title>
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/layout.css">
+  <link rel="stylesheet" href="css/chat.css">
+  <link rel="stylesheet" href="css/composer.css">
+</head>
+<body>
+  <div class="app">
+    <!-- 顶部栏 -->
+    <header class="topbar">
+      <div class="brand">
+        <canvas class="brand-dot" data-orb="18" aria-hidden="true"></canvas>
+        <span class="brand-name">灵阅AI助手</span>
+      </div>
+      <div class="topbar-acts">
+        <button class="icon-btn" id="btnSessions" type="button" title="会话列表" aria-label="会话列表" aria-haspopup="true" aria-expanded="false">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.6 4h10.8M2.6 8h10.8M2.6 12h6.8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        </button>
+        <button class="icon-btn" id="btnNew" type="button" title="新建会话" aria-label="新建会话">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.2v9.6M3.2 8h9.6" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        </button>
+        <button class="icon-btn" id="btnSettings" type="button" title="设置" aria-label="设置">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- 会话列表：左侧滑出的抽屉（开合走 .open 类，好播过渡动画） -->
+    <div class="sess" id="sessPanel">
+      <div class="sess-head">
+        <span class="sess-title">会话</span>
+        <button class="btn" id="btnSessNew" type="button">新建会话</button>
+      </div>
+      <div class="sess-list" id="sessList"></div>
+    </div>
+    <div class="sess-scrim" id="sessScrim"></div>
+
+    <!-- 中部：空状态 / 消息列表 -->
+    <main class="stage" id="stage">
+      <section class="empty" id="empty">
+        <!-- data-live：三处品牌位里唯一走 WebGPU 动态渲染的一处（见 js/orb.js） -->
+        <canvas class="orb" data-orb="88" data-live aria-hidden="true"></canvas>
+        <p class="empty-hi">Hi，需要我做什么？</p>
+        <div class="chips" id="chips"></div>
+      </section>
+      <div class="msgs" id="msgs" hidden></div>
+
+      <!-- 生成状态：模型在干什么（请求中 / 回答中 / 执行中），生成结束即收起 -->
+      <div class="gen-status" id="genStatus" role="status" aria-live="polite" hidden>
+        <canvas class="gs-avatar" data-orb="16" aria-hidden="true"></canvas>
+        <span class="gs-text" id="genStatusText"></span>
+      </div>
+    </main>
+
+    <!-- 底部输入区 -->
+    <footer class="composer">
+      <div class="composer-box">
+        <label class="sr-only" for="input">输入消息</label>
+        <div class="attach-bar" id="attachBar" hidden></div>
+        <div class="cmd-bar" id="cmdBar" hidden></div>
+        <textarea id="input" rows="1" placeholder="输入消息，按 Enter 发送，Shift + Enter 换行"></textarea>
+        <div class="toolbar">
+          <button class="icon-btn sm" type="button" id="btnImage" title="插入图片" disabled>
+            <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="3" width="12" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="5.8" cy="6.4" r="1.1" fill="currentColor"/><path d="M3 11.4 6.4 8.4l2.2 2 1.8-1.6L13 11.6" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <button class="icon-btn sm" type="button" id="btnSkills" title="截图：单击截全屏，拖动框选">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.6 4.2l.9-1.5h3l.9 1.5M2.6 12.4V5.2c0-.6.4-1 1-1h8.8c.6 0 1 .4 1 1v7.2c0 .6-.4 1-1 1H3.6c-.6 0-1-.4-1-1z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><circle cx="8" cy="8.7" r="2.1" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
+          </button>
+
+          <div class="more-wrap" id="moreWrap">
+            <button class="icon-btn sm" id="btnMore" type="button" title="更多" aria-haspopup="menu" aria-expanded="false">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="3.4" cy="8" r="1.2" fill="currentColor"/><circle cx="8" cy="8" r="1.2" fill="currentColor"/><circle cx="12.6" cy="8" r="1.2" fill="currentColor"/></svg>
+            </button>
+            <div class="more-menu" id="moreMenu" hidden role="menu">
+              <button type="button" role="menuitem" id="miImage" disabled>插入图片</button>
+              <button type="button" role="menuitem" id="miSkills">截图</button>
+            </div>
+          </div>
+
+          <button class="pill-select" id="ddPermission" type="button" aria-haspopup="listbox" aria-expanded="false">
+            <svg class="pill-ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.9 12.9 3.7v4.2c0 2.8-1.9 4.9-4.9 5.9-3-1-4.9-3.1-4.9-5.9V3.7z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+            <span class="pill-label">需要审批</span>
+            <svg class="caret" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6.4 8 10.2l4-3.8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <button class="pill-select" id="ddModel" type="button" aria-haspopup="listbox" aria-expanded="false">
+            <span class="pill-ic" aria-hidden="true"></span>
+            <span class="pill-label">未配置模型</span>
+            <svg class="caret" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6.4 8 10.2l4-3.8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+
+          <!-- 当前会话上下文占用：圆环进度（白）+ 外置百分比，达到压缩阈值变色，悬停看明细 -->
+          <button class="ctx-gauge" id="ctxGauge" type="button" aria-label="上下文占用">
+            <svg viewBox="0 0 36 36" aria-hidden="true">
+              <circle class="cg-track" cx="18" cy="18" r="15.5"/>
+              <circle class="cg-bar" cx="18" cy="18" r="15.5"/>
+            </svg>
+            <span class="cg-pct" id="ctxPct">0%</span>
+          </button>
+          <button class="send-btn" id="btnSend" type="button" title="发送" aria-label="发送">
+            <svg class="ic-send" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 12.6V3.6M4.4 7.2 8 3.6l3.6 3.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <svg class="ic-stop" viewBox="0 0 16 16" aria-hidden="true"><rect x="4.8" y="4.8" width="6.4" height="6.4" rx="1.6" fill="currentColor"/></svg>
+          </button>
+        </div>
+      </div>
+    </footer>
+
+    <input type="file" id="fileImage" accept="image/*" multiple hidden>
+  </div>
+
+  <!-- 设置页：整页视图，铺满面板覆盖对话区；点左上角返回回到对话 -->
+  <div class="sheet" id="sheet" hidden>
+    <div class="sheet-card" aria-labelledby="sheetTitle">
+      <header class="sheet-head">
+        <button class="icon-btn" id="btnSheetClose" type="button" title="返回" aria-label="返回">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10.2 3.4 5.6 8l4.6 4.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <h2 class="sheet-title" id="sheetTitle">设置</h2>
+      </header>
+
+      <div class="sheet-body">
+        <!-- 一级：设置项列表 -->
+        <nav class="set-menu" id="setMenu" aria-label="设置分类">
+          <button class="set-item" type="button" data-page="models">
+            <span class="set-ic" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M8 1.8 13.4 4.7v6.6L8 14.2 2.6 11.3V4.7z M2.6 4.7 8 7.6l5.4-2.9 M8 7.6v6.6" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg></span>
+            <span class="set-main">
+              <span class="set-name">模型管理</span>
+              <span class="set-desc">登记、切换模型与生成参数</span>
+            </span>
+            <span class="set-badge" id="badgeModels"></span>
+            <span class="set-arrow" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          </button>
+          <button class="set-item" type="button" data-page="cmds">
+            <span class="set-ic" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M9.1 1.8 3.6 9.2h3.1l-.8 5 5.5-7.4H8.3z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg></span>
+            <span class="set-main">
+              <span class="set-name">功能指令</span>
+              <span class="set-desc">「功能指令」下拉与 / 菜单的可用指令</span>
+            </span>
+            <span class="set-badge" id="badgeCmds"></span>
+            <span class="set-arrow" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          </button>
+          <button class="set-item" type="button" data-page="news">
+            <span class="set-ic" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M3.4 3h9.2v9.2c0 .7-.5 1.2-1.2 1.2H3.4zM5.7 6h4.2M5.7 8.4h4.2M5.7 10.8h2.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            <span class="set-main">
+              <span class="set-name">新闻来源</span>
+              <span class="set-desc">「今日要闻」的检索范围，最多 3 个</span>
+            </span>
+            <span class="set-badge" id="badgeNews"></span>
+            <span class="set-arrow" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          </button>
+          <button class="set-item" type="button" data-page="translate">
+            <span class="set-ic" aria-hidden="true"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.6" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M2.4 8h11.2M8 2.4c2.7 3 2.7 8.2 0 11.2M8 2.4c-2.7 3-2.7 8.2 0 11.2" fill="none" stroke="currentColor" stroke-width="1.1"/></svg></span>
+            <span class="set-main">
+              <span class="set-name">划词操作</span>
+              <span class="set-desc">选中正文后弹出的操作按钮</span>
+            </span>
+            <span class="set-badge" id="badgeTranslate"></span>
+            <span class="set-arrow" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          </button>
+          <button class="set-item" type="button" data-page="shot">
+            <span class="set-ic" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M5.6 4.2l.9-1.5h3l.9 1.5M2.6 12.4V5.2c0-.6.4-1 1-1h8.8c.6 0 1 .4 1 1v7.2c0 .6-.4 1-1 1H3.6c-.6 0-1-.4-1-1z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><circle cx="8" cy="8.7" r="2.1" fill="none" stroke="currentColor" stroke-width="1.3"/></svg></span>
+            <span class="set-main">
+              <span class="set-name">截图</span>
+              <span class="set-desc">截图完成后的交付方式</span>
+            </span>
+            <span class="set-badge" id="badgeShot"></span>
+            <span class="set-arrow" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          </button>
+          <button class="set-item" type="button" data-page="approve">
+            <span class="set-ic" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M8 1.9 12.9 3.7v4.2c0 2.8-1.9 4.9-4.9 5.9-3-1-4.9-3.1-4.9-5.9V3.7z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M5.8 7.7 7.4 9.3 10.3 6.3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            <span class="set-main">
+              <span class="set-name">执行权限</span>
+              <span class="set-desc">自主审批时可跳过确认的操作</span>
+            </span>
+            <span class="set-badge" id="badgeApprove"></span>
+            <span class="set-arrow" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          </button>
+          <button class="set-item" type="button" data-page="glow">
+            <span class="set-ic" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M2.5 5V3.6c0-.6.4-1 1-1H5M11 2.6h1.4c.6 0 1 .4 1 1V5M13.4 11v1.4c0 .6-.4 1-1 1H11M5 13.4H3.6c-.6 0-1-.4-1-1V11" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            <span class="set-main">
+              <span class="set-name">页面操控</span>
+              <span class="set-desc">助手操作网页时的视觉提示</span>
+            </span>
+            <span class="set-badge" id="badgeGlow"></span>
+            <span class="set-arrow" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          </button>
+          <button class="set-item" type="button" data-page="usage">
+            <span class="set-ic" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M2.5 13.5V8.8m3.7 4.7V5.6m3.7 7.9V7.6m3.6 5.9V2.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span>
+            <span class="set-main">
+              <span class="set-name">Token 消耗</span>
+              <span class="set-desc">各模型用量与调用频率</span>
+            </span>
+            <span class="set-badge" id="badgeUsage"></span>
+            <span class="set-arrow" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          </button>
+        </nav>
+
+        <!-- 二级：模型管理 -->
+        <div class="set-page" id="pageModels" hidden>
+          <section class="sec">
+            <div class="sec-head">
+              <h3 class="sec-title">已登记的模型</h3>
+              <span class="sec-tag" id="modelCount"></span>
+            </div>
+            <div class="model-list" id="modelList"></div>
+          </section>
+
+          <section class="sec">
+            <div class="sec-head">
+              <h3 class="sec-title" id="modelFormTitle">添加模型</h3>
+            </div>
+            <form class="form" id="modelForm">
+              <div class="field">
+                <label for="mName">名称</label>
+                <input id="mName" type="text" placeholder="例如：DeepSeek">
+              </div>
+              <div class="field">
+                <label id="provLbl">供应商</label>
+                <div class="prov-dd" id="provDD">
+                  <button type="button" class="prov-btn" id="provBtn" aria-haspopup="listbox" aria-expanded="false">
+                    <span class="prov-ic" id="provIc" aria-hidden="true"></span>
+                    <span class="prov-label" id="provLabel"></span>
+                    <svg class="prov-caret" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  </button>
+                  <div class="prov-menu" id="provMenu" role="listbox" aria-labelledby="provLbl" hidden></div>
+                </div>
+                <input id="mProvider" type="text" placeholder="供应商名称" hidden>
+              </div>
+              <div class="field">
+                <label for="mModel">模型</label>
+                <input id="mModel" type="text" placeholder="例如：deepseek-chat">
+              </div>
+              <div class="field">
+                <label for="mBaseURL">API 地址</label>
+                <input id="mBaseURL" type="text" placeholder="https://api.deepseek.com/v1">
+              </div>
+              <div class="field">
+                <label for="mKey">密钥</label>
+                <input id="mKey" type="password" placeholder="sk-..." autocomplete="off">
+              </div>
+              <label class="switch-row" for="mVision">
+                <input id="mVision" type="checkbox">
+                <span class="switch-text">
+                  <span class="switch-name">支持图片理解</span>
+                  <span class="switch-desc">标记这个模型能看懂图片（视觉模型）。</span>
+                </span>
+              </label>
+              <p class="form-error" id="modelError" role="alert"></p>
+              <div class="form-acts">
+                <button class="btn ghost" type="button" id="btnModelReset">清空</button>
+                <button class="btn" type="submit" id="btnModelSave">保存</button>
+              </div>
+            </form>
+            <p class="sec-hint">密钥只存在本机浏览器里，发送消息时直接带到你填的 API 地址，不经过任何中转。</p>
+          </section>
+
+          <!-- 生成参数：对当前使用的模型生效，归在模型管理里 -->
+          <section class="sec">
+            <div class="sec-head">
+              <h3 class="sec-title">生成参数</h3>
+              <span class="sec-tag" id="genTag"></span>
+            </div>
+            <p class="sec-hint">对当前使用的模型生效。温度、top_p 留空则用默认值，最大输出留空表示不限制。历史占用达到「预算 × 阈值」时会自动把旧对话压成摘要，压缩失败则退回裁剪。读取分段长度控制长页面（论文、文档）每次读取回传多少正文，超出会越界夹回。</p>
+            <form class="form" id="genForm">
+              <div class="field">
+                <label for="gTemp">温度（0–2）</label>
+                <input id="gTemp" type="number" min="0" max="2" step="0.1" placeholder="0.7">
+              </div>
+              <div class="field">
+                <label for="gTopP">top_p（0–1）</label>
+                <input id="gTopP" type="number" min="0" max="1" step="0.05" placeholder="1">
+              </div>
+              <div class="field">
+                <label for="gMaxTokens">最大输出 tokens</label>
+                <input id="gMaxTokens" type="number" min="1" step="1" placeholder="留空 = 不限制">
+              </div>
+              <div class="field">
+                <label for="gCtx">上下文预算（tokens）</label>
+                <input id="gCtx" type="number" min="500" step="500" placeholder="32000">
+              </div>
+              <div class="field">
+                <label for="gRatio">自动压缩阈值（占预算百分比 50–95）</label>
+                <input id="gRatio" type="number" min="50" max="95" step="5" placeholder="80">
+              </div>
+              <div class="field">
+                <label for="gChunk">读取分段长度（字符 2000–30000）</label>
+                <input id="gChunk" type="number" min="2000" max="30000" step="1000" placeholder="12000">
+              </div>
+              <div class="field">
+                <label for="gRounds">工具调用轮次上限（1–30）</label>
+                <input id="gRounds" type="number" min="1" max="30" step="1" placeholder="10">
+              </div>
+              <p class="form-error" id="genError" role="alert"></p>
+              <div class="form-acts">
+                <button class="btn ghost" type="button" id="btnGenReset">恢复默认</button>
+                <button class="btn" type="submit" id="btnGenSave">保存</button>
+              </div>
+            </form>
+          </section>
+        </div>
+
+        <!-- 二级：功能指令 -->
+        <div class="set-page" id="pageCmds" hidden>
+          <section class="sec">
+            <div class="sec-head">
+              <h3 class="sec-title">指令开关</h3>
+              <span class="sec-tag" id="cmdCount"></span>
+            </div>
+            <div class="cmd-set-list" id="cmdList"></div>
+            <p class="sec-hint">勾选的指令才会出现在空状态「功能指令」下拉和输入框「/」菜单里；关闭只是不展示，顶部快捷 chips 不受影响。改动即时保存。</p>
+          </section>
+        </div>
+
+        <!-- 二级：新闻来源 -->
+        <div class="set-page" id="pageNews" hidden>
+          <section class="sec">
+            <div class="sec-head">
+              <h3 class="sec-title">新闻来源</h3>
+              <span class="sec-tag" id="newsCount"></span>
+            </div>
+            <div class="news-src-list" id="newsList"></div>
+            <form class="form" id="newsForm">
+              <div class="field">
+                <label for="newsInput">来源网址</label>
+                <input id="newsInput" type="text" placeholder="例如：news.qq.com" autocomplete="off">
+              </div>
+              <p class="form-error" id="newsError" role="alert"></p>
+              <div class="form-acts">
+                <button class="btn" type="submit" id="btnNewsAdd">添加</button>
+              </div>
+            </form>
+            <p class="sec-hint">「今日要闻」指令只从这些网站探寻新闻，最多 3 个；填站点首页或新闻频道页均可，不带 https:// 会自动补上。留空则不限来源，改为联网搜索今日要闻。</p>
+          </section>
+        </div>
+
+        <!-- 二级：划词操作 -->
+        <div class="set-page" id="pageTranslate" hidden>
+          <section class="sec">
+            <label class="switch-row" for="tOn">
+              <input id="tOn" type="checkbox">
+              <span class="switch-text">
+                <span class="switch-name">选中正文后就地翻译</span>
+                <span class="switch-desc">选中一段正文，选区旁会出现「翻译」按钮；点击后原文就地替换为译文，再点译文还原。只作用于当前页面，刷新即恢复。</span>
+              </span>
+            </label>
+          </section>
+
+          <section class="sec">
+            <label class="switch-row" for="aOn">
+              <input id="aOn" type="checkbox">
+              <span class="switch-text">
+                <span class="switch-name">选中正文后加入对话</span>
+                <span class="switch-desc">选中一段正文，选区旁会出现「加入对话」按钮；点击后文本以引用卡片进入输入区，随下一条消息一并发给模型。侧边栏未打开时会自动展开。</span>
+              </span>
+            </label>
+          </section>
+
+          <section class="sec">
+            <div class="sec-head">
+              <h3 class="sec-title">翻译方向</h3>
+            </div>
+            <form class="form">
+              <div class="field">
+                <label for="tFrom">源语言</label>
+                <select id="tFrom">
+                  <option>自动检测</option>
+                  <option>简体中文</option>
+                  <option>英语</option>
+                  <option>日语</option>
+                  <option>韩语</option>
+                  <option>法语</option>
+                  <option>德语</option>
+                  <option>西班牙语</option>
+                  <option>俄语</option>
+                  <option>葡萄牙语</option>
+                  <option>阿拉伯语</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="tTo">目标语言</label>
+                <select id="tTo">
+                  <option>自动</option>
+                  <option>简体中文</option>
+                  <option>英语</option>
+                  <option>日语</option>
+                  <option>韩语</option>
+                  <option>法语</option>
+                  <option>德语</option>
+                  <option>西班牙语</option>
+                  <option>俄语</option>
+                  <option>葡萄牙语</option>
+                  <option>阿拉伯语</option>
+                </select>
+              </div>
+            </form>
+            <p class="sec-hint">源语言固定后不再自动判断；目标语言选「自动」时沿用智能判断：中文译成英语，其他语言译成简体中文。改动即时保存。</p>
+          </section>
+        </div>
+
+        <!-- 二级：截图 -->
+        <div class="set-page" id="pageShot" hidden>
+          <section class="sec">
+            <label class="switch-row" for="shotOn">
+              <input id="shotOn" type="checkbox">
+              <span class="switch-text">
+                <span class="switch-name">截图后自动加入附件框</span>
+                <span class="switch-desc">开启：全屏 / 框选截图完成后，图片自动放进输入框下方的附件条。关闭：截图改为复制到系统剪贴板，可粘贴到任意位置；剪贴板不可用时回退到附件条。</span>
+              </span>
+            </label>
+          </section>
+        </div>
+
+        <!-- 二级：执行权限 -->
+        <div class="set-page" id="pageApprove" hidden>
+          <section class="sec">
+            <div class="sec-head">
+              <h3 class="sec-title">自主审批时可直接放行的操作</h3>
+            </div>
+            <div class="apv-list" id="apvList"></div>
+            <p class="sec-hint">仅「自主审批」档位生效：勾选的操作不再弹「允许 / 拒绝」，直接执行；未勾选的仍会向你确认。「需要审批」档位下一律确认，「自动执行」档位下一律放行。改动即时保存。</p>
+          </section>
+        </div>
+
+        <!-- 二级：页面操控 -->
+        <div class="set-page" id="pageGlow" hidden>
+          <section class="sec">
+            <label class="switch-row" for="glowOn">
+              <input id="glowOn" type="checkbox">
+              <span class="switch-text">
+                <span class="switch-name">操控时页面边缘亮起流光</span>
+                <span class="switch-desc">开启：助手读取、点击、填写网页期间，页面四边亮起一圈流动的彩色光带，一眼看出「这个页面正在被助手操纵」。关闭：助手静默操作，页面无任何视觉变化。只影响提示效果，不影响操作本身。</span>
+              </span>
+            </label>
+          </section>
+        </div>
+
+        <!-- 二级：Token 消耗 -->
+        <div class="set-page" id="pageUsage" hidden>
+          <section class="sec">
+            <div class="sec-head">
+              <h3 class="sec-title">近 7 天用量</h3>
+              <span class="sec-tag" id="usageTotal"></span>
+            </div>
+            <div class="usage-list" id="usageList"></div>
+            <p class="sec-hint">tokens 取自服务端返回的 usage（未返回则不计）；柱子为当天调用次数。</p>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

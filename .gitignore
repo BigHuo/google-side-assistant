@@ -1,0 +1,18 @@
+# 依赖目录（playwright 仅本地开发/截图用，运行时零依赖）
+node_modules/
+
+# skill 参考素材：运行时不加载，prompt 已蒸馏进 page/js/skills.js
+skills/
+
+# macOS 系统文件
+.DS_Store
+
+# 本地环境与日志
+.env
+.env.*
+*.log
+
+# 编辑器 / IDE
+.vscode/
+.idea/
+*.swp

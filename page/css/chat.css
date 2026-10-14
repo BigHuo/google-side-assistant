@@ -1,0 +1,508 @@
+/* ============================================================
+   聊天区：空状态（光球 + 问候 + 快捷指令）、消息列表、气泡
+   ============================================================ */
+
+/* ---------- 空状态 ---------- */
+
+.empty {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px 20px 40px;
+  text-align: center;
+}
+
+.empty[hidden] { display: none; }
+
+/* 空状态的大商标：WebGPU 动态立方体（见 js/brand-cube.js），跟随光标转动。
+   这里只负责占位尺寸，别再叠 CSS 渐变和动画，否则会和画布打架。 */
+.orb { width: 88px; height: 88px; }
+
+.empty-hi { font-size: 15px; font-weight: 500; color: var(--fg); margin-top: 4px; }
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.chip {
+  padding: 6px 13px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raise);
+  color: var(--fg-soft);
+  font-size: 12px;
+  transition: background var(--dur), color var(--dur), border-color var(--dur);
+}
+.chip:hover { background: var(--bg-hover); color: var(--fg); border-color: var(--brand); }
+.chip:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+
+/* 「功能指令」下拉入口：比普通快捷 chip 更醒目（品牌色），带收起箭头示意可展开 */
+.chip.cmd-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--brand);
+  border-color: var(--brand-deep);
+}
+.chip.cmd-toggle:hover { color: var(--brand); border-color: var(--brand); }
+.chip.cmd-toggle svg { width: 10px; height: 10px; transition: transform var(--dur); }
+.chip.cmd-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+
+/* ---------- 消息列表 ---------- */
+
+.msgs {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 12px 8px;
+}
+.msgs[hidden] { display: none; }
+
+/* ---------- 生成状态行：模型正在干什么 ---------- */
+
+.gen-status {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 12px 12px;
+  color: var(--fg-soft);
+  font-size: 12px;
+}
+.gen-status[hidden] { display: none; }
+
+/* 同一个商标的小号版（见 js/orb.js），只留尺寸 */
+.gs-avatar {
+  flex: 0 0 16px;
+  width: 16px; height: 16px;
+}
+
+/* 文字轻轻呼吸，表示还在跑，停下就会消失 */
+.gs-text { animation: gs-breathe 1.6s ease-in-out infinite; }
+
+@keyframes gs-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gs-text { animation: none; }
+  .gs-avatar::before, .gs-avatar::after { transition: none; }
+}
+
+.msg { display: flex; align-items: flex-start; }
+.msg.user { justify-content: flex-end; }
+
+.bubble {
+  max-width: 88%;
+  padding: 8px 11px;
+  background: var(--bg-raise);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* 用户提问跟步骤卡同一副样子：灰底、细边框、紧凑内边距
+   （底色/边框/圆角都来自上面的 .bubble 基类，这里不再套品牌蓝实底）。
+   文字仍用主色，别跟着步骤卡一起沉下去；身份只靠右对齐区分。 */
+.msg.user .bubble {
+  padding: 4px 9px;
+  color: var(--fg);
+}
+
+/* 指令短名（/polish 等）：蓝色 + 半粗，与用户正文区分开 */
+.msg.user .bubble .msg-cmd {
+  color: var(--brand);
+  font-weight: 600;
+}
+
+.msg.error .bubble {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+/* ---------- 用户消息附带的图片 ---------- */
+
+/* 带图的用户消息改为竖排：气泡在上、缩略图一排在下，仍整体靠右 */
+.msg.user:has(.msg-imgs) {
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.msg-imgs {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  margin: 4px 2px 0;
+  max-width: 88%;
+}
+
+.msg-imgs img {
+  display: block;
+  width: 96px;
+  height: 96px;
+  object-fit: cover;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+}
+
+/* ---------- 用户消息附带的划词引用 ---------- */
+
+/* 带引用的用户消息同样竖排：引用卡在气泡上方，仍整体靠右 */
+.msg.user:has(.msg-quote) {
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.msg-quote {
+  max-width: 44%;
+  margin: 0 2px 4px;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+}
+
+.msg-quote .q-text {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--fg-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- 助手气泡里的 Markdown ---------- */
+
+/* 助手回答不套气泡：直接铺满面板宽度，边框和内边距全让给正文。
+   问答区分交给用户那条右对齐的蓝色气泡就够；报错气泡（.error）保留，
+   它是有话要说的状态，得跟正常回答区分开，所以这里必须排除掉。 */
+.msg.assistant:not(.error) .bubble {
+  flex: 1 1 auto;
+  max-width: 100%;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  white-space: normal; /* 用户消息仍是纯文本，保留换行 */
+}
+
+.bubble > :first-child { margin-top: 0; }
+.bubble > :last-child { margin-bottom: 0; }
+
+.bubble p { margin: 8px 0; }
+
+.bubble h1, .bubble h2, .bubble h3, .bubble h4, .bubble h5, .bubble h6 {
+  margin: 14px 0 6px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.bubble h1 { font-size: 16px; }
+.bubble h2 { font-size: 15px; }
+.bubble h3 { font-size: 14px; }
+.bubble h4, .bubble h5, .bubble h6 { font-size: 13px; color: var(--fg-soft); }
+
+.bubble ul, .bubble ol { margin: 8px 0; padding-left: 20px; }
+.bubble li { margin: 3px 0; }
+.bubble li > ul, .bubble li > ol { margin: 3px 0; }
+
+.bubble a { color: var(--brand); text-decoration: none; }
+.bubble a:hover { text-decoration: underline; }
+
+.bubble code {
+  padding: 1px 5px;
+  background: var(--bg-input);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.bubble pre {
+  margin: 8px 0;
+  padding: 9px 11px;
+  background: var(--bg-input);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+}
+.bubble pre code { padding: 0; background: none; border: 0; white-space: pre; }
+
+.bubble blockquote {
+  margin: 8px 0;
+  padding: 2px 0 2px 10px;
+  border-left: 2px solid var(--line-strong);
+  color: var(--fg-soft);
+}
+
+.bubble hr { margin: 12px 0; border: 0; border-top: 1px solid var(--line); }
+
+/* 表格可能比面板宽，独立横向滚动，不撑破气泡 */
+.bubble table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  margin: 8px 0;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.bubble th, .bubble td {
+  padding: 5px 9px;
+  border: 1px solid var(--line);
+  text-align: left;
+  white-space: nowrap;
+}
+.bubble th { background: var(--bg-input); font-weight: 600; }
+.bubble .ta-center { text-align: center; }
+.bubble .ta-right { text-align: right; }
+
+/* 流式输出时的闪烁光标：贴到最后一段文字末尾 */
+.bubble.streaming::after,
+.bubble.streaming > :last-child::after {
+  content: "";
+  display: inline-block;
+  width: 6px; height: 13px;
+  margin-left: 2px;
+  vertical-align: -2px;
+  background: var(--fg-soft);
+  border-radius: 1px;
+  animation: caret 1s steps(2, start) infinite;
+}
+
+/* 气泡里已有内容块（Markdown 产出的 p / li / …）时，光标由最后一个块的 ::after 承担。
+   否则它作为行内元素只能排在块级段落下方，会单独占一行、看上去像个孤立的灰块 */
+.bubble.streaming:has(> :last-child)::after { content: none; }
+
+@keyframes caret {
+  0%, 100% { opacity: 0; }
+  50% { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bubble.streaming::after { animation: none; opacity: 0.7; }
+}
+
+/* ---------- 回答末尾的操作行：结束时间 + 复制 / 删除 ---------- */
+
+/* 贴住回答右下角：负外边距抵消 .msgs 的 12px 行间距，视觉上仍属于这条回答。
+   整行右对齐：结束时间紧挨在「复制」左边，两者作为一组靠在右侧 */
+.turn-acts {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin: -6px 2px 0;
+}
+
+.turn-time {
+  font-size: 11px;
+  color: var(--fg-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.turn-btns {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.turn-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--fg-faint);
+  font-size: 11.5px;
+  line-height: 1.4;
+  transition: color var(--dur), background var(--dur), border-color var(--dur);
+}
+.turn-btn svg { width: 12px; height: 12px; flex: 0 0 12px; }
+.turn-btn:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+  border-color: var(--line-strong);
+}
+.turn-btn.del:hover {
+  color: var(--danger);
+  border-color: rgba(229, 100, 91, 0.5);
+}
+.turn-btn:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+
+/* ---------- 步骤卡片：Agent 的操作轨迹 ---------- */
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  align-self: flex-start; /* 别跟着列宽拉伸：短步骤贴着内容就好，不必占满一行 */
+  max-width: 88%;
+  padding: 4px 9px;
+  background: var(--bg-raise);
+  border: 1px solid var(--line);
+  border-radius: var(--radius); /* 与用户气泡同一档圆角，不再是胶囊 */
+  color: var(--fg-soft);
+  font-size: 12px;
+  transition: border-color var(--dur), color var(--dur);
+}
+
+.step + .step { margin-top: -6px; } /* 连续步骤收紧些，避免一条条太散 */
+
+.step-dot {
+  flex: 0 0 6px;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--fg-faint);
+}
+
+.step[data-state="running"] .step-dot { background: var(--brand); animation: step-pulse 1.1s ease-in-out infinite; }
+.step[data-state="pending"] .step-dot { background: #e0a33c; }
+.step[data-state="done"] .step-dot { background: #46a758; }
+.step[data-state="fail"] .step-dot { background: var(--danger); }
+.step[data-state="denied"] .step-dot { background: var(--fg-faint); }
+
+.step[data-state="pending"] { border-color: rgba(224, 163, 60, 0.5); color: var(--fg); }
+.step[data-state="fail"] { border-color: rgba(229, 100, 91, 0.5); color: var(--danger); }
+
+@keyframes step-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .step[data-state="running"] .step-dot { animation: none; }
+}
+
+/* ---------- 思考块（思维链） ---------- */
+
+/* 与正文气泡拉开差距：等宽字体、更暗的配色、限高内滚动（不把页面顶长）；
+   点标题展开 / 收起，生成中默认展开，结束后收起 */
+.think {
+  align-self: flex-start;
+  max-width: 92%;
+  background: var(--bg-raise);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.think-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 10px;
+  font-size: 11.5px;
+  color: var(--fg-faint);
+  transition: color var(--dur), background var(--dur);
+}
+.think-head:hover { color: var(--fg-soft); background: var(--bg-hover); }
+
+.think-arrow { display: flex; width: 12px; height: 12px; color: currentColor; transition: transform var(--dur); }
+.think.open .think-arrow { transform: rotate(90deg); }
+
+/* 生成中：标题点亮，提示正在思考 */
+.think.live .think-title { color: var(--brand); }
+.think.live .think-title::after {
+  content: "...";
+  animation: think-dots 1.2s infinite;
+}
+/* 用句点（基线位置，偏下）而不是中点/省略号（垂直位置不同会上下跳）；100% 帧补齐，避免循环回落到基础值再跳一下 */
+@keyframes think-dots {
+  0%, 100% { content: ""; }
+  25% { content: "."; }
+  50% { content: ".."; }
+  75% { content: "..."; }
+}
+
+.think-body {
+  display: none;
+  max-height: 216px; /* 限高：思考再长也在盒子里滚，不拉长页面 */
+  overflow-y: auto;
+  padding: 7px 10px 8px;
+  border-top: 1px dashed var(--line);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.75;
+  color: var(--fg-faint);
+}
+.think.open .think-body { display: block; }
+
+.think-text { white-space: pre-wrap; word-break: break-word; }
+
+/* 思考内容里的 Markdown：比正文气泡缩一档，但结构齐全 */
+.think-text > :first-child { margin-top: 0; }
+.think-text > :last-child { margin-bottom: 0; }
+.think-text p { margin: 6px 0; }
+.think-text h1, .think-text h2, .think-text h3,
+.think-text h4, .think-text h5, .think-text h6 { margin: 10px 0 4px; font-weight: 600; line-height: 1.4; color: var(--fg-soft); }
+.think-text h1, .think-text h2 { font-size: 13px; }
+.think-text h3, .think-text h4, .think-text h5, .think-text h6 { font-size: 12px; }
+.think-text ul, .think-text ol { margin: 6px 0; padding-left: 18px; }
+.think-text li { margin: 2px 0; }
+.think-text strong { color: var(--fg-soft); }
+.think-text a { color: var(--brand); text-decoration: none; }
+.think-text a:hover { text-decoration: underline; }
+.think-text code {
+  padding: 0 4px;
+  background: var(--bg-input);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: 10.5px;
+}
+.think-text pre {
+  margin: 6px 0;
+  padding: 7px 9px;
+  background: var(--bg-input);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+}
+.think-text pre code { padding: 0; background: none; border: 0; white-space: pre; }
+.think-text blockquote {
+  margin: 6px 0;
+  padding: 1px 0 1px 9px;
+  border-left: 2px solid var(--line-strong);
+  color: var(--fg-faint);
+}
+.think-text hr { margin: 8px 0; border: 0; border-top: 1px dashed var(--line); }
+.think-text table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  margin: 6px 0;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 10.5px;
+}
+.think-text th, .think-text td { padding: 3px 7px; border: 1px solid var(--line); text-align: left; white-space: nowrap; }
+.think-text th { background: var(--bg-input); font-weight: 600; }
+
+.step-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.step-acts { display: flex; gap: 6px; margin-left: 4px; flex: 0 0 auto; }
+
+.step-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  padding: 1px 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  line-height: 1.5;
+  transition: background var(--dur), border-color var(--dur), color var(--dur);
+}
+.step-btn.ok { border-color: var(--brand); color: var(--brand); }
+.step-btn.ok:hover { background: var(--brand); color: var(--brand-on); }
+.step-btn.no { color: var(--fg-soft); }
+.step-btn.no:hover { background: var(--bg-hover); color: var(--fg); }
+.step-btn:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
