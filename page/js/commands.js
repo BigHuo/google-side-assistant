@@ -10,45 +10,14 @@ import * as store from "./store.js";
 import { CHIP_COMMANDS } from "./skills.js";
 
 export const COMMANDS = [
-  {
-    slash: "translate",
-    name: "全文翻译",
-    desc: "整页读完后译成简体中文，保留结构",
-    prompt: "把当前页面全文翻译成简体中文：先 read_page 分段读完，再按原文结构输出完整译文。",
-  },
-  {
-    slash: "digest",
-    name: "要点提炼",
-    desc: "提炼核心要点与一句话总结",
-    prompt: "阅读当前页面，提炼 5~8 条核心要点，每条一句话，末尾用两句话总结。",
-  },
-  {
-    slash: "deep",
-    name: "深度解读",
-    desc: "读完再讲论证结构与关键证据",
-    prompt: "深度解读当前页面：先分段读完，再讲清它的论证结构、关键证据与值得注意的细节。",
-  },
-  {
-    slash: "table",
-    name: "提取表格",
-    desc: "把页面里的表格整理成 Markdown",
-    prompt: "读取当前页面，把其中的表格和数据整理成 Markdown 表格输出。",
-  },
+  // 核心四件套（来自 skills.js 的快捷 chips）：总结 / 文献调研 / 论文精读 / 今日要闻
+  ...CHIP_COMMANDS,
   {
     slash: "search",
     name: "联网搜索",
     desc: "跳转必应检索最新信息",
     draft: "搜索：",
   },
-  {
-    slash: "polish",
-    name: "文案润色",
-    desc: "改写指定文字，保留原意",
-    draft: "润色这段文字：",
-  },
-  // 快捷 chips 同款指令（来源 skills.js 的 CHIP_COMMANDS）：chip 在原地，
-  // 菜单里也能触发；设置开关只影响菜单展示，不动 chip。
-  ...CHIP_COMMANDS,
 ];
 
 /* ---------- 落点：选中一条指令后做什么 ---------- */
@@ -223,11 +192,12 @@ export function commandMenuKeydown(e) {
 
 /* ---------- 输入框 "/" 唤起 ---------- */
 
-/** 由输入框 input 事件调用：光标前是行首的 "/xxx"（无空白）时弹菜单并即时过滤，
+/** 由输入框 input 事件调用：光标前是 "/xxx"（位于行首或空白之后）时弹菜单并即时过滤，
     离开该状态（删掉 /、敲了空格、挪走光标）自动收起。 */
 export function handleSlashInput(input) {
   const upto = input.value.slice(0, input.selectionStart);
-  const m = /^\/(\S*)$/.exec(upto);
+  // 行首或空格后的 "/" 都算唤起；"https://" 这类紧贴字符的斜杠不误触
+  const m = /(?:^|\s)\/(\S*)$/.exec(upto);
   if (!m) {
     closeCommandMenu();
     return false;
@@ -235,9 +205,9 @@ export function handleSlashInput(input) {
   return openCommandMenu($(".composer-box"), {
     query: m[1],
     onPick: (cmd) => {
-      // 先把 "/xxx" 记号从输入框摘掉，再按统一落点执行（draft 预填 / 其余进指令块）
+      // 先把 "/xxx" 记号（连它前面的空白）从输入框摘掉，再按统一落点执行
       const caret = input.selectionStart;
-      const before = input.value.slice(0, caret).replace(/\/\S*$/, "");
+      const before = input.value.slice(0, caret).replace(/(?:^|\s)\/\S*$/, "");
       const after = input.value.slice(caret);
       input.value = before + after;
       input.selectionStart = input.selectionEnd = before.length;

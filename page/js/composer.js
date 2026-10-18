@@ -1,6 +1,6 @@
 /* 输入区：自适应高度、Enter 发送、权限 / 模型下拉、窄宽度下的「更多」菜单 */
 
-import { $, $$, toast, ICON_SUCCESS } from "./util.js";
+import { $, $$, toast, ICON_SUCCESS, ICON_FILE, formatBytes } from "./util.js";
 import * as store from "./store.js";
 import { openSettings, modelIconSvg } from "./settings.js";
 import { handleSlashInput, commandMenuKeydown } from "./commands.js";
@@ -27,12 +27,25 @@ const MAX_IMAGES = 4; // 一条消息最多附带的图片数
 const IMG_MAX_EDGE = 1280; // 压缩后的最长边，再大对问答没有增益、白耗上下文与存储
 const IMG_JPEG_Q = 0.85;
 
+const MAX_FILES = 3; // 一条消息最多附带的文件数
+const MAX_FILE_BYTES = 500 * 1024; // 单个文件上限：只收小文件
+const MAX_FILE_CHARS = 20000; // 单个文件交给模型的正文上限（约 6k token）
+const MAX_FILES_CHARS = 40000; // 一条消息里所有附件正文合计上限
+// 只认文本类：二进制文件模型读不懂，也会白占存储与上下文
+const TEXT_EXT = new Set([
+  "txt", "md", "markdown", "json", "jsonl", "csv", "tsv", "log", "xml", "yaml", "yml",
+  "toml", "ini", "conf", "cfg", "js", "mjs", "cjs", "ts", "tsx", "jsx", "html", "htm",
+  "css", "scss", "less", "py", "java", "kt", "go", "rs", "rb", "php", "c", "h", "cpp",
+  "hpp", "cs", "swift", "sh", "bash", "zsh", "sql", "vue", "svelte",
+]);
+
 let onSend = null; // 由 app.js 注入
 let onAbort = null;
 let busy = false;
 let popmenu = null; // 当前展开的浮层
 let popAnchor = null; // 浮层由哪个按钮展开（同一按钮再点收起，切别的按钮直接换）
 let images = []; // 待发送的图片（dataURL）
+let files = []; // 待发送的文本文件 [{name,size,type,text}]
 let quotes = []; // 待发送的划词引用 [{text, url, title}]
 let stagedCmd = null; // 已就位的指令块（来自 / 菜单或「功能指令」下拉），随下一条消息一起发送
 
@@ -42,6 +55,7 @@ export function initComposer({ onSend: sendHandler, onAbort: abortHandler }) {
   bindInput();
   bindMore();
   bindImage();
+  bindFile();
   bindPermission();
   bindModel();
   bindQuote();
@@ -52,6 +66,7 @@ export function initComposer({ onSend: sendHandler, onAbort: abortHandler }) {
     refreshSend();
     $("#input").focus();
   });
+  document.addEventListener("sa:restore-ask", (e) => restoreAsk(e.detail || {}));
   refreshModelLabel();
 }
 
@@ -76,7 +91,7 @@ function refreshSend() {
     // draft 类（搜索：等）等用户补参数，没字不让发
     const needText = stagedCmd?.draft;
     btn.disabled =
-      ((!$("#input").value.trim() && !images.length && !quotes.length && !stagedCmd) ||
+      ((!$("#input").value.trim() && !images.length && !files.length && !quotes.length && !stagedCmd) ||
         (needText && !$("#input").value.trim()));
     btn.title = "发送";
     btn.setAttribute("aria-label", "发送");
@@ -120,7 +135,7 @@ function bindInput() {
   input.addEventListener("input", () => {
     autoGrow();
     refreshSend();
-    handleSlashInput(input); // 行首 "/" 唤起功能指令菜单，边输入边过滤
+    handleSlashInput(input); // 行首或空格后 "/" 唤起功能指令菜单，边输入边过滤
   });
   input.addEventListener("keydown", (e) => {
     if (commandMenuKeydown(e)) return; // 指令菜单开着时先服务它（方向键 / Enter / Esc）
@@ -143,7 +158,7 @@ async function doSend() {
   if (busy) return;
   const input = $("#input");
   const text = input.value.trim();
-  if (!text && !images.length && !quotes.length && !stagedCmd) return;
+  if (!text && !images.length && !files.length && !quotes.length && !stagedCmd) return;
 
   // 带图但当前模型不支持图片理解：先拦在清空输入之前，用户的话和图都原地保留
   if (images.length) {
@@ -176,19 +191,46 @@ async function doSend() {
   }
 
   const pics = images.splice(0); // 取走全部待发图片
+  const fs = files.splice(0); // 取走全部待发文件
   const qs = quotes.splice(0); // 取走全部待发引用
   input.value = "";
   autoGrow();
   renderAttach();
   renderCmdBar();
   refreshSend();
-  onSend?.(display, pics, qs, hidden, cmd?.slash ?? "");
+  onSend?.(display, pics, qs, hidden, cmd?.slash ?? "", fs);
 }
 
 /** 由 chat 的 busy 状态驱动：生成中禁用发送 */
 export function setComposerBusy(v) {
   busy = v;
   refreshSend();
+}
+
+/** 撤回提问：把正文与附件整体还原到待发区，并聚焦输入框。
+    指令块由调用方通过 sa:stage-command 先恢复；clearCmd 用于清掉旧指令。 */
+function restoreAsk({ text = "", quotes: qs = [], images: pics = [], files: fs = [], clearCmd = false } = {}) {
+  if (clearCmd) removeStagedCmd();
+  const el = $("#input");
+  el.value = String(text || "");
+  images = (pics || []).filter((u) => typeof u === "string" && u.startsWith("data:image/")).slice(0, MAX_IMAGES);
+  files = (fs || [])
+    .filter((f) => f && typeof f.text === "string" && f.text.trim())
+    .map((f) => ({
+      name: String(f.name || "文件"),
+      size: Number(f.size) || 0,
+      type: String(f.type || ""),
+      text: String(f.text),
+    }))
+    .slice(0, MAX_FILES);
+  quotes = (qs || [])
+    .filter((q) => q && String(q.text || "").trim())
+    .map((q) => ({ text: String(q.text).trim(), url: String(q.url || ""), title: String(q.title || "") }));
+  autoGrow();
+  renderAttach();
+  refreshSend();
+  el.focus();
+  el.selectionStart = el.selectionEnd = el.value.length;
 }
 
 /* ---------- 插入图片（仅图片理解模型可用） ---------- */
@@ -224,7 +266,7 @@ async function compressImage(file) {
   return cv.toDataURL("image/jpeg", IMG_JPEG_Q);
 }
 
-/** 待发区的移除按钮：图片与引用共用 */
+/** 待发区的移除按钮：图片、文件与引用共用 */
 function attachX(onRemove, label) {
   const x = document.createElement("button");
   x.type = "button";
@@ -239,7 +281,7 @@ function attachX(onRemove, label) {
 function renderAttach() {
   const bar = $("#attachBar");
   bar.textContent = "";
-  bar.hidden = !images.length && !quotes.length;
+  bar.hidden = !images.length && !files.length && !quotes.length;
   images.forEach((url, i) => {
     const item = document.createElement("span");
     item.className = "attach-item";
@@ -251,6 +293,21 @@ function renderAttach() {
       renderAttach();
       refreshSend();
     }, "移除图片"));
+    bar.appendChild(item);
+  });
+  files.forEach((f, i) => {
+    const item = document.createElement("span");
+    item.className = "attach-file";
+    item.title = `${f.name} · ${formatBytes(f.size)}`;
+    item.innerHTML = ICON_FILE; // 常量 SVG，非用户输入
+    const name = document.createElement("span");
+    name.className = "attach-file-name";
+    name.textContent = f.name;
+    item.append(name, attachX(() => {
+      files.splice(i, 1);
+      renderAttach();
+      refreshSend();
+    }, "移除文件"));
     bar.appendChild(item);
   });
   quotes.forEach((q, i) => {
@@ -365,6 +422,99 @@ function refreshImageButton(m) {
   btn.disabled = !ok;
   mi.disabled = !ok;
   btn.title = ok ? "插入图片" : "当前模型不支持图片理解";
+}
+
+/* ---------- 上传小文件：只收文本类，正文随消息落库并注入模型上下文 ---------- */
+
+const extOf = (name) => {
+  const i = String(name).lastIndexOf(".");
+  return i > 0 ? String(name).slice(i + 1).toLowerCase() : "";
+};
+
+function isTextFile(f) {
+  if (f.type.startsWith("text/")) return true;
+  return TEXT_EXT.has(extOf(f.name)) || /^(dockerfile|makefile|readme|license)$/i.test(f.name);
+}
+
+async function readTextFile(f) {
+  const text = await f.text();
+  if (!text.trim()) throw new Error("文件是空的");
+  if (text.includes("\u0000")) throw new Error("不是文本文件");
+  // UTF-8 解不开的字节会变成 U+FFFD，占比高基本就是 GBK 等编码
+  const bad = (text.match(/\uFFFD/g) || []).length;
+  if (bad > 20 && bad / text.length > 0.01) throw new Error("编码无法识别，请转成 UTF-8");
+  return text;
+}
+
+/** 文件选择入口：逐个校验大小、类型与总量，通过后进待发队列 */
+async function addFiles(list) {
+  let added = false;
+  let anyCut = false;
+  for (const f of list) {
+    if (files.length >= MAX_FILES) {
+      toast(`一条消息最多附 ${MAX_FILES} 个文件`);
+      break;
+    }
+    if (files.some((x) => x.name === f.name && x.size === f.size)) {
+      toast("这个文件已经加过了：" + f.name);
+      continue;
+    }
+    if (f.size > MAX_FILE_BYTES) {
+      toast(`文件不能超过 500KB：${f.name}`);
+      continue;
+    }
+    if (f.type.startsWith("image/")) {
+      toast("图片请用旁边的图片按钮");
+      continue;
+    }
+    if (!isTextFile(f)) {
+      toast("暂时只支持文本类文件：" + f.name);
+      continue;
+    }
+
+    try {
+      let text = await readTextFile(f);
+      let clipped = false;
+      if (text.length > MAX_FILE_CHARS) {
+        text = text.slice(0, MAX_FILE_CHARS);
+        clipped = true;
+      }
+      const used = files.reduce((s, x) => s + x.text.length, 0);
+      if (used + text.length > MAX_FILES_CHARS) {
+        const room = MAX_FILES_CHARS - used;
+        if (room < 200) {
+          toast("附件正文总量已达上限");
+          break;
+        }
+        text = text.slice(0, room);
+        clipped = true;
+      }
+      if (clipped) text += "\n\n…（内容较长，后续已省略）";
+      files.push({ name: f.name, size: f.size, type: f.type, text });
+      added = true;
+      anyCut = anyCut || clipped;
+    } catch (err) {
+      toast((err?.message || "文件读取失败") + "：" + f.name);
+    }
+  }
+  if (added) {
+    renderAttach();
+    refreshSend();
+  }
+  if (anyCut) toast("文件较大，超出部分已省略");
+}
+
+function bindFile() {
+  const btn = $("#btnFile");
+  const file = $("#fileFile");
+  const pick = () => file.click();
+  btn.addEventListener("click", pick);
+  $("#miFile").addEventListener("click", pick); // 窄宽度下从「更多」菜单进
+  file.addEventListener("change", async () => {
+    const list = [...file.files];
+    file.value = ""; // 允许连续选同一个文件
+    await addFiles(list);
+  });
 }
 
 /* ---------- 权限下拉 ---------- */

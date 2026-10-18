@@ -12,10 +12,13 @@ const TRASH_SVG =
 
 let editingId = null; // 正在内联改名的会话
 let confirmId = null; // 等待二次确认删除的会话
+let cleanArmed = false; // 清理按钮已进入二次确认态
+let cleanTimer = 0; // 二次确认的自动复位定时器
 
 export function initSessions() {
   // 顶栏「新建会话」与浮层里的「新建会话」是同一个动作
   const create = async () => {
+    resetClean();
     if (isBusy()) {
       toast("正在生成，先停止再新建会话");
       return;
@@ -25,6 +28,7 @@ export function initSessions() {
   };
   $("#btnNew").addEventListener("click", create);
   $("#btnSessNew").addEventListener("click", create);
+  $("#btnSessClean").addEventListener("click", onClean);
   $("#btnSessions").addEventListener("click", (e) => {
     e.stopPropagation();
     togglePanel();
@@ -64,6 +68,49 @@ export function closePanel() {
   $("#btnSessions").setAttribute("aria-expanded", "false");
   editingId = null;
   confirmId = null;
+  resetClean();
+}
+
+/* ---------- 清理无绑定标签的会话 ---------- */
+
+function resetClean() {
+  cleanArmed = false;
+  clearTimeout(cleanTimer);
+  const b = $("#btnSessClean");
+  if (!b) return;
+  b.textContent = "清理";
+  b.classList.remove("danger");
+}
+
+/** 两步确认：第一次点显示待清理数量，第二次才真正删除；4 秒无操作自动复位。
+    只删 tab_id 为空的会话——仍绑定着标签的会话不会被碰到。 */
+async function onClean() {
+  if (isBusy()) {
+    toast("正在生成，先停止再清理会话");
+    return;
+  }
+  const btn = $("#btnSessClean");
+
+  if (!cleanArmed) {
+    const n = (await store.listSessions()).filter((s) => s.tab_id == null).length;
+    if (!n) {
+      toast("没有需要清理的会话");
+      return;
+    }
+    cleanArmed = true;
+    btn.textContent = `确认清理 ${n}`;
+    btn.classList.add("danger");
+    clearTimeout(cleanTimer);
+    cleanTimer = setTimeout(resetClean, 4000);
+    return;
+  }
+
+  resetClean();
+  const cur = currentId();
+  const removed = await store.deleteUnboundSessions();
+  toast(removed.length ? `已清理 ${removed.length} 个会话` : "没有需要清理的会话");
+  if (removed.includes(cur)) newSession(); // 当前打开的会话被清掉：回草稿态
+  else loadSessions(); // 没有广播时手动刷新列表
 }
 
 /* ---------- 列表 ---------- */

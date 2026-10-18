@@ -2,12 +2,14 @@
    发送走 llm.js 的真实流式调用；模型要动页面时，这里负责跑 Agent 循环、
    渲染「步骤卡片」、并在「需要审批」模式下逐条征求用户同意。 */
 
-import { $, toast, hideToast } from "./util.js";
+import { $, toast, hideToast, ICON_FILE, formatBytes } from "./util.js";
 import * as store from "./store.js";
 import { streamChat, summarizeChat, makeTitle } from "./llm.js";
 import { renderMarkdown } from "./markdown.js";
 import { CHIPS } from "./skills.js";
 import {
+  COMMANDS,
+  stageCommand,
   applyCommand,
   openCommandMenu,
   closeCommandMenu,
@@ -77,6 +79,7 @@ async function followTabOnSend(tabId) {
     const s = await store.createSession(tabId);
     sessionId = s.id;
     messages = [];
+    costCache.clear();
   };
   if (sessionId == null) {
     await begin();
@@ -257,6 +260,7 @@ function renderAll() {
   hideStatus(); // 重新渲染说明没在生成，状态行不该留着
   const box = $("#msgs");
   box.textContent = "";
+  costCache.clear(); // 会话级缓存：换会话后旧键不再需要，顺手控住内存
   for (const m of messages) renderMessage(box, m);
 
   const has = messages.length > 0;
@@ -268,7 +272,7 @@ function renderAll() {
 
 /** 助手消息可能是「思考块 + 气泡 + 步骤卡片」交替的序列（blocks），按存的顺序还原；
    没有 blocks 的旧数据退化成单个气泡。
-   每块都打上 data-id（消息 id），回答末尾再补一行「复制 / 删除」操作。 */
+   每块都打上 data-id（消息 id），回答末尾再补一行「复制 / 撤回 / 删除」操作。 */
 function renderMessage(box, m) {
   const blocks = m.role === "assistant" && m.status !== "error" ? m.blocks : null;
   if (!Array.isArray(blocks) || !blocks.length) {
@@ -335,6 +339,27 @@ function msgEl(m) {
     wrap.appendChild(strip);
   }
 
+  // 用户消息附带的文件：只显示文件名与大小，正文只给模型读，不刷屏
+  if (m.role === "user" && Array.isArray(m.files) && m.files.length) {
+    const strip = document.createElement("div");
+    strip.className = "msg-files";
+    for (const f of m.files) {
+      const chip = document.createElement("span");
+      chip.className = "msg-file";
+      chip.title = `${f.name} · ${formatBytes(f.size)}`;
+      chip.innerHTML = ICON_FILE; // 常量 SVG，非用户输入
+      const name = document.createElement("span");
+      name.className = "msg-file-name";
+      name.textContent = f.name;
+      const size = document.createElement("span");
+      size.className = "msg-file-size";
+      size.textContent = formatBytes(f.size);
+      chip.append(name, size);
+      strip.appendChild(chip);
+    }
+    wrap.appendChild(strip);
+  }
+
   return wrap;
 }
 
@@ -364,6 +389,7 @@ function quoteEl(q) {
 
 const TURN_ICONS = {
   copy: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="5.6" y="5.6" width="7.6" height="7.6" rx="1.7"/><path d="M10.2 3.6H4.7A1.5 1.5 0 0 0 3.2 5.1v5.5"/></svg>',
+  undo: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6.4 3.4 3.2 6.6l3.2 3.2"/><path d="M3.2 6.6h6.2a3.8 3.8 0 0 1 0 7.6H7.8"/></svg>',
   del: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.6h10"/><path d="M6.4 4.6V3.4c0-.4.3-.8.8-.8h1.6c.5 0 .8.4.8.8v1.2"/><path d="M4.8 4.6l.5 7.6c.1.5.5.9 1 .9h3.4c.5 0 .9-.4 1-.9l.5-7.6"/></svg>',
 };
 
@@ -375,8 +401,8 @@ function fmtTime(iso) {
   return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
-/** 回答末尾右下角的操作行：左侧标回答结束时间，右侧是「复制 / 删除」。
-    用 data-id 标记所属消息，删除时按它整体摘除该轮的所有元素。 */
+/** 回答末尾右下角的操作行：左侧标回答结束时间，右侧是「复制 / 撤回 / 删除」。
+    用 data-id 标记所属消息，操作时按它整体定位该轮的所有元素。 */
 function turnActions(m) {
   const row = document.createElement("div");
   row.className = "turn-acts";
@@ -389,23 +415,21 @@ function turnActions(m) {
   const btns = document.createElement("span");
   btns.className = "turn-btns";
 
-  const mk = (kind, label, title, onClick) => {
+  const mk = (kind, title, onClick) => {
     const b = document.createElement("button");
     b.type = "button";
     b.className = "turn-btn " + kind;
     b.title = title;
     b.setAttribute("aria-label", title);
     b.innerHTML = TURN_ICONS[kind];
-    const span = document.createElement("span");
-    span.textContent = label;
-    b.appendChild(span);
     b.addEventListener("click", onClick);
     return b;
   };
 
   btns.append(
-    mk("copy", "复制", "复制这条回答", () => copyAnswer(m)),
-    mk("del", "删除", "删除这轮提问与回答", () => removeTurn(m.id)),
+    mk("copy", "复制这条回答", () => copyAnswer(m)),
+    mk("undo", "撤回本次提问并回填输入框", () => undoAsk(m)),
+    mk("del", "删除这轮提问与回答", () => removeTurn(m.id)),
   );
   row.append(time, btns);
   return row;
@@ -423,26 +447,85 @@ async function copyAnswer(m) {
   }
 }
 
-/** 删除整轮问答：连同它前面的用户提问一起摘掉，界面与存储同步更新 */
-async function removeTurn(id) {
-  if (busy) return; // 生成中不动历史，避免和流式渲染抢 DOM
+/** 摘掉一整轮（用户提问 + 助手回答）的界面与内存数据，返回被摘掉的用户消息 */
+function dropTurn(id) {
   const i = messages.findIndex((m) => String(m.id) === String(id));
-  if (i < 0) return;
+  if (i < 0) return null;
 
+  const user = messages[i - 1]?.role === "user" ? messages[i - 1] : null; // 这轮的用户提问
   const ids = new Set([String(id)]);
-  if (messages[i - 1]?.role === "user") ids.add(String(messages[i - 1].id)); // 这轮的用户提问
+  if (user) ids.add(String(user.id));
   messages = messages.filter((m) => !ids.has(String(m.id)));
 
   const box = $("#msgs");
   for (const el of [...box.children]) if (ids.has(el.dataset.id)) el.remove();
 
-  await persist();
-  refreshCtxGauge(); // 删掉一轮，占用回落
   if (!messages.length) {
     // 整段对话被清空：回到空状态
     box.hidden = true;
     $("#empty").hidden = false;
   }
+  return user;
+}
+
+/** 删除整轮问答：连同它前面的用户提问一起摘掉，界面与存储同步更新 */
+async function removeTurn(id) {
+  if (busy) return; // 生成中不动历史，避免和流式渲染抢 DOM
+  if (!dropTurn(id)) return;
+  await persist();
+  refreshCtxGauge(); // 删掉一轮，占用回落
+}
+
+/** 撤回本轮提问：摘掉这一轮，并把原问题（含附件、指令块）还原到输入框 */
+async function undoAsk(m) {
+  if (busy) {
+    toast("生成中，先停止再撤回");
+    return;
+  }
+  const i = messages.findIndex((x) => String(x.id) === String(m.id));
+  const user = i > 0 && messages[i - 1]?.role === "user" ? messages[i - 1] : null;
+  if (!user) {
+    toast("没有找到对应的提问");
+    return;
+  }
+
+  dropTurn(m.id);
+  await persist();
+  refreshCtxGauge();
+  refillAsk(user);
+  toast("已撤回，提问回到输入框");
+}
+
+/** 把用户消息还原成可编辑状态：带指令的恢复指令块，正文与附件交给输入区回填 */
+function refillAsk(user) {
+  let text = String(user.content || "");
+  // 纯图 / 纯文件 / 纯引用消息存的是占位文案，回填时不要把它当成用户原话
+  if (
+    (user.images?.length && text === "（图片）") ||
+    (user.files?.length && text === "（文件）") ||
+    (user.quotes?.length && text === "（见下方引用内容）")
+  ) {
+    text = "";
+  }
+
+  const cmd = user.cmd ? COMMANDS.find((c) => c.slash === user.cmd) : null;
+  if (cmd) {
+    const prefix = "/" + cmd.slash;
+    text = text.startsWith(prefix) ? text.slice(prefix.length).trim() : text;
+    stageCommand(cmd); // 先恢复 /xxx 指令块，再回填正文
+  }
+
+  document.dispatchEvent(
+    new CustomEvent("sa:restore-ask", {
+      detail: {
+        text,
+        quotes: user.quotes || [],
+        images: user.images || [],
+        files: user.files || [],
+        clearCmd: !cmd, // 原提问没有指令时，别把输入区里旧的指令块带进来
+      },
+    }),
+  );
 }
 
 function scrollToEnd(force) {
@@ -598,6 +681,18 @@ function makeThink(blocks, mid) {
   let finished = false;
   const block = { type: "think", text: "", label: "" };
   let follow = true;
+  let paintRaf = 0;
+
+  // 与正文气泡同一套节流：分片只累积，画面每帧最多重绘一次
+  const paintNow = () => {
+    paintRaf = 0;
+    if (!textEl) return;
+    textEl.innerHTML = renderMarkdown(block.text);
+    if (follow) bodyEl.scrollTop = bodyEl.scrollHeight;
+    // 卡片在限高之内不断长高（0 → 216px），外层也要跟着滚，
+    // 否则卡片下沿会掉到输入区后面——上半截看着像「卡住不动了」
+    scrollToEnd();
+  };
 
   return {
     push(chunk) {
@@ -618,15 +713,16 @@ function makeThink(blocks, mid) {
         scrollToEnd(true);
       }
       block.text += chunk;
-      textEl.innerHTML = renderMarkdown(block.text); // 与正文气泡同一渲染器，流式逐片重绘
-      if (follow) bodyEl.scrollTop = bodyEl.scrollHeight;
-      // 卡片在限高之内不断长高（0 → 216px），外层也要跟着滚，
-      // 否则卡片下沿会掉到输入区后面——上半截看着像「卡住不动了」
-      scrollToEnd();
+      if (!paintRaf) paintRaf = requestAnimationFrame(paintNow);
     },
     finish() {
       if (!el || finished) return;
       finished = true;
+      if (paintRaf) {
+        cancelAnimationFrame(paintRaf); // 收起前补画最后一帧，确保思考全文已落进 DOM
+        paintRaf = 0;
+        textEl.innerHTML = renderMarkdown(block.text);
+      }
       el.classList.remove("live");
       block.label = `思考过程 · ${thinkDurLabel(Date.now() - startedAt)}`;
       titleEl.textContent = block.label;
@@ -678,16 +774,40 @@ const SLIM_HEAD = 400; // 较早正文压缩后保留的开头长度，够模型
 
 const IMG_TOKEN_COST = 1100; // 每张图的粗略 token 开销（按最长边 1280 的估），预算裁剪用
 
-/** 单条消息的粗略开销（含隐藏指令、tool_calls 的 JSON、附带图片与划词引用） */
-function msgCost(m) {
+/** 单条消息的粗略开销（含隐藏指令、tool_calls 的 JSON、附带图片、文件与划词引用） */
+function rawCost(m) {
   return (
     estTokens(m.content || "") +
     estTokens(m.hidden || "") + // 隐藏指令同样发给模型，预算要一起算
     4 + // 每条消息的固定结构开销
     (m.images?.length || 0) * IMG_TOKEN_COST +
     (m.quotes || []).reduce((s, q) => s + estTokens(q.text || ""), 0) +
+    (m.files || []).reduce((s, f) => s + estTokens(f.text || ""), 0) +
     (m.tool_calls ? estTokens(JSON.stringify(m.tool_calls)) : 0)
   );
+}
+
+/* 成本缓存：占用圆环与预算裁剪每轮都会重算全部历史，逐条重扫字符是纯浪费。
+   按「会话 id + 消息 id」缓存，用内容长度签名校验：工具正文被压缩改写后长度变化，
+   签名自动失效。工具回合的临时对象没有 id，直接现算、不进缓存。 */
+const costCache = new Map(); // `${sessionId}:${id}` -> { sig, cost }
+
+const costSig = (m) =>
+  `${(m.content || "").length}|${(m.hidden || "").length}|${m.images?.length || 0}|${
+    (m.quotes || []).reduce((s, q) => s + (q.text || "").length, 0)
+  }|${(m.files || []).reduce((s, f) => s + (f.text || "").length, 0)}|${
+    m.tool_calls ? JSON.stringify(m.tool_calls).length : 0
+  }`;
+
+function msgCost(m) {
+  if (m.id == null) return rawCost(m);
+  const key = `${sessionId}:${m.id}`;
+  const sig = costSig(m);
+  const hit = costCache.get(key);
+  if (hit && hit.sig === sig) return hit.cost;
+  const cost = rawCost(m);
+  costCache.set(key, { sig, cost });
+  return cost;
 }
 
 /** 把工具结果 JSON 里的长正文压成「开头一段 + 省略说明」，保留 ok / summary 这类关键信息 */
@@ -730,6 +850,23 @@ function quotePrefix(qs) {
   return qs.map((q) => `【引用｜${q.title || q.url || "网页"}】\n${q.text}`).join("\n\n") + "\n\n";
 }
 
+/** 附件正文拼进发给模型的正文：界面只展示文件名与大小，模型读全文 */
+function filePrefix(fs) {
+  if (!Array.isArray(fs) || !fs.length) return "";
+  return (
+    fs
+      .map((f) => {
+        const text = String(f.text || "");
+        const cut = text.length > FILE_TEXT_LIMIT;
+        return (
+          `【文件：${f.name}｜${formatBytes(f.size)}】\n${text.slice(0, FILE_TEXT_LIMIT)}` +
+          (cut ? "\n…（内容过长，已截断）" : "")
+        );
+      })
+      .join("\n\n") + "\n\n"
+  );
+}
+
 /** 隐藏指令拼进发给模型的正文：界面气泡只显示 m.content，模型要读的是完整指令
     （功能指令的大段 prompt，如「今日要闻」，与划词引用同一处理方式） */
 function hiddenPrefix(m) {
@@ -738,10 +875,14 @@ function hiddenPrefix(m) {
 
 /** 气泡里的「/英文短名」前缀只给用户看：发给模型时剥掉，模型读的是 hidden 里的指令原文 */
 function stripCmdPrefix(m) {
-  if (!m.cmd) return m.content;
-  const p = "/" + m.cmd;
-  if (m.content === p) return "";
-  return m.content.startsWith(p + " ") ? m.content.slice(p.length + 1) : m.content;
+  if (m.cmd) {
+    const p = "/" + m.cmd;
+    if (m.content === p) return "";
+    return m.content.startsWith(p + " ") ? m.content.slice(p.length + 1) : m.content;
+  }
+  // 纯文件消息的「（文件）」只是界面占位，正文已经由 filePrefix 注入
+  if (m.files?.length && m.content === "（文件）") return "";
+  return m.content;
 }
 
 /** 交给模型的历史：跳过出错与空消息，role 只信 user / assistant（带图消息把 images 一并带给请求层） */
@@ -752,7 +893,7 @@ function historyItems() {
       const it = {
         id: m.id,
         role: m.role === "assistant" ? "assistant" : "user",
-        content: hiddenPrefix(m) + quotePrefix(m.quotes) + stripCmdPrefix(m),
+        content: hiddenPrefix(m) + quotePrefix(m.quotes) + filePrefix(m.files) + stripCmdPrefix(m),
       };
       if (m.images?.length) it.images = m.images;
       return it;
@@ -875,6 +1016,7 @@ function safeParse(s) {
 }
 
 const TOOL_TEXT_LIMIT = 14000; // 工具正文回灌上限：太长容易把下一轮顶出模型的上下文窗口
+const FILE_TEXT_LIMIT = 20200; // 单个附件注入上限（比上传截断多留一点，保住截断提示）
 
 /** 正文超过上限就只留前一段并标明截断（整串 JSON 直接 slice 会截成残缺 JSON，模型读不懂） */
 function clipText(s, note) {
@@ -883,11 +1025,17 @@ function clipText(s, note) {
   return s.slice(0, TOOL_TEXT_LIMIT);
 }
 
-/** 检索类结果（results 数组）的尺寸守卫：先压摘要长度，还不够就截条目数 */
+/** 检索类结果（results 数组）的尺寸守卫：先压摘要长度，还不够就截条目数。
+    条目可能是论文（abstract）也可能是搜索结果（snippet），只压存在的字段，
+    不要给 SERP 条目凭空补一个空 abstract。 */
 function clipResults(items, note) {
-  const list = items.map((p) =>
-    p && typeof p === "object" ? { ...p, abstract: String(p.abstract || "").slice(0, 400) } : p,
-  );
+  const list = items.map((p) => {
+    if (!p || typeof p !== "object") return p;
+    const q = { ...p };
+    if ("abstract" in q) q.abstract = String(q.abstract || "").slice(0, 400);
+    if ("snippet" in q) q.snippet = String(q.snippet || "").slice(0, 300);
+    return q;
+  });
   const s = JSON.stringify(list);
   if (s.length <= TOOL_TEXT_LIMIT) return list;
   const avg = s.length / list.length || 1;
@@ -918,15 +1066,24 @@ function toolResult(c, res) {
  *  @param {{text,url,title}[]} [qs] 划词引用
  *  @param {string} [hidden] 隐藏指令：不进气泡，只在组装模型历史时拼在正文前
  *    （功能指令的大段 prompt 走这里，用户只看到短语）
- *  @param {string} [cmd] 指令英文短名（如 polish）：气泡里以蓝色「/短名」前缀展示，
- *    组装模型历史时剥掉，模型读的是 hidden 里的指令原文 */
-export async function send(text, pics = [], qs = [], hidden = "", cmd = "") {
+ *  @param {string} [cmd] 指令英文短名（如 survey）：气泡里以蓝色「/短名」前缀展示，
+ *    组装模型历史时剥掉，模型读的是 hidden 里的指令原文
+ *  @param {{name,size,type,text}[]} [attached] 文本附件，正文注入模型上下文 */
+export async function send(text, pics = [], qs = [], hidden = "", cmd = "", attached = []) {
   const body = String(text || "").trim();
   const images = (pics || []).filter((p) => typeof p === "string" && p.startsWith("data:image/"));
   const quotes = (qs || [])
     .filter((q) => q && typeof q.text === "string" && q.text.trim())
     .map((q) => ({ text: q.text.trim(), url: String(q.url || ""), title: String(q.title || "") }));
-  if ((!body && !images.length && !quotes.length) || busy) return;
+  const files = (attached || [])
+    .filter((f) => f && typeof f.text === "string" && f.text.trim() && f.name)
+    .map((f) => ({
+      name: String(f.name).slice(0, 160),
+      size: Number(f.size) || 0,
+      type: String(f.type || ""),
+      text: String(f.text).slice(0, FILE_TEXT_LIMIT),
+    }));
+  if ((!body && !images.length && !quotes.length && !files.length) || busy) return;
 
   // 带图但当前模型不支持图片理解：直接拦下，别让消息发出去白跑一趟报错
   if (images.length) {
@@ -937,8 +1094,8 @@ export async function send(text, pics = [], qs = [], hidden = "", cmd = "") {
     }
   }
 
-  // 纯图 / 纯引用无字时补个占位，历史组装按 content 过滤，空串会被丢掉
-  const content = body || (images.length ? "（图片）" : "（见下方引用内容）");
+  // 纯附件无字时补个占位，历史组装按 content 过滤，空串会被丢掉
+  const content = body || (files.length ? "（文件）" : images.length ? "（图片）" : "（见下方引用内容）");
 
   // 点击发送那一刻的页面：本轮会话归属与所有页面工具都锁定它。
   // 模型出工具调用往往要等几秒，期间用户切去别的标签，也不能把「总结当前页面」落到别的页面上。
@@ -957,6 +1114,7 @@ export async function send(text, pics = [], qs = [], hidden = "", cmd = "") {
   if (hidden) user.hidden = String(hidden); // 隐藏指令随消息落库，重启后仍在模型上下文里
   if (cmd) user.cmd = String(cmd); // 指令短名：只用于气泡里的蓝色前缀，不进模型上下文
   if (images.length) user.images = images;
+  if (files.length) user.files = files;
   if (quotes.length) user.quotes = quotes;
   messages.push(user);
   $("#msgs").appendChild(msgEl(user));
@@ -970,7 +1128,7 @@ export async function send(text, pics = [], qs = [], hidden = "", cmd = "") {
     !titleSettled.has(sessionId)
   ) {
     titleRequested.add(sessionId);
-    const fallbackTitle = body || (quotes.length ? quotes[0].text : content); // 纯引用时用引用首句，比占位文案像话
+    const fallbackTitle = body || (quotes.length ? quotes[0].text : files.length ? files[0].name : content); // 纯附件时用文件名兜底
     store.touchSession(sessionId, { title: fallbackTitle.slice(0, 16) }).then(notifySessions);
     autoTitle(sessionId, fallbackTitle);
   }
@@ -997,6 +1155,19 @@ export async function send(text, pics = [], qs = [], hidden = "", cmd = "") {
   let bubbleText = ""; // 当前气泡自己的文本（answer 是全部气泡的合集）
   let bubbleBlock = null; // 当前气泡在 reply.blocks 里的记录
 
+  // 流式重绘节流：分片只累加文本，真正重绘最多每帧一次。
+  // 全量 Markdown 重渲染随回答长度线性增长，逐片重画会让整条回答退化成 O(n²)。
+  let paintRaf = 0;
+  const paintNow = () => {
+    paintRaf = 0;
+    if (!bubble) return;
+    bubble.innerHTML = renderMarkdown(bubbleText);
+    scrollToEnd();
+  };
+  const schedulePaint = () => {
+    if (!paintRaf) paintRaf = requestAnimationFrame(paintNow);
+  };
+
   const newBubble = () => {
     bubbleBlock = { type: "text", text: "" };
     reply.blocks.push(bubbleBlock);
@@ -1012,12 +1183,18 @@ export async function send(text, pics = [], qs = [], hidden = "", cmd = "") {
     bubbleText += chunk;
     answer += chunk;
     bubbleBlock.text = bubbleText;
-    bubble.innerHTML = renderMarkdown(bubbleText);
-    scrollToEnd();
+    schedulePaint();
   };
-  // 封口：摘掉 streaming 类再丢引用，否则该气泡的光标会一直闪下去
+  // 封口：先补画最后一帧，再摘掉 streaming 类并丢引用，否则该气泡的光标会一直闪下去
   const sealBubble = () => {
-    if (bubble) bubble.classList.remove("streaming");
+    if (paintRaf) {
+      cancelAnimationFrame(paintRaf);
+      paintRaf = 0;
+    }
+    if (bubble) {
+      bubble.innerHTML = renderMarkdown(bubbleText);
+      bubble.classList.remove("streaming");
+    }
     bubble = null;
     bubbleBlock = null;
   };
@@ -1155,6 +1332,10 @@ export async function send(text, pics = [], qs = [], hidden = "", cmd = "") {
   } finally {
     controller = null;
     pendingConfirm = null;
+    if (paintRaf) {
+      cancelAnimationFrame(paintRaf); // 收尾统一重绘，别让挂起的帧再覆盖一次
+      paintRaf = 0;
+    }
     if (glowLit) pageGlow(false, sendTabId); // 操控结束（含中断/出错）：熄掉页面四边流光
     think?.finish(); // 最后一轮思考收尾：标题换成耗时，默认收起（中途各轮已各自收口）
     if (!bubble) newBubble(); // 兜底：无论如何都要有个气泡落字

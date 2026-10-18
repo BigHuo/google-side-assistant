@@ -29,7 +29,7 @@
 }
 .composer-box textarea::placeholder { color: var(--fg-faint); }
 
-/* ---------- 待发送图片的缩略条 ---------- */
+/* ---------- 待发送附件条 ---------- */
 
 .attach-bar {
   display: flex;
@@ -103,6 +103,39 @@
   transform: translateY(-50%);
 }
 
+/* 文件附件卡：回形针 + 文件名，单行省略 */
+.attach-file {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 168px;
+  padding: 4px 24px 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--fg-soft);
+}
+
+.attach-file svg {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  opacity: 0.7;
+}
+
+.attach-file-name {
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.attach-file .attach-x {
+  top: 50%;
+  transform: translateY(-50%);
+}
+
 /* ---------- 指令块：/ 菜单选中的指令停在输入框里（见 js/composer.js） ---------- */
 
 .cmd-bar {
@@ -162,6 +195,9 @@
   gap: 6px;
   flex-wrap: nowrap; /* 面板窄，靠收缩与省略号而不是换行 */
 }
+
+/* 文件 / 图片 / 截图三个操作贴成一簇：抵消父级 gap，视觉间距收到约 2px */
+.toolbar > .icon-btn.sm + .icon-btn.sm { margin-left: -4px; }
 
 .pill-select {
   display: inline-flex;

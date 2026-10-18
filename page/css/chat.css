@@ -117,13 +117,15 @@
   color: var(--fg);
 }
 
-/* 指令短名（/polish 等）：蓝色 + 半粗，与用户正文区分开 */
+/* 指令短名（/summary 等）：蓝色 + 半粗，与用户正文区分开 */
 .msg.user .bubble .msg-cmd {
   color: var(--brand);
   font-weight: 600;
 }
 
+/* 报错气泡沿用用户气泡的紧凑内边距，尺寸节奏保持一致，只靠危险色区分 */
 .msg.error .bubble {
+  padding: 4px 9px;
   border-color: var(--danger);
   color: var(--danger);
 }
@@ -152,6 +154,57 @@
   object-fit: cover;
   border-radius: var(--radius);
   border: 1px solid var(--line);
+}
+
+/* ---------- 用户消息附带的文件 ---------- */
+
+/* 带文件的用户消息同样竖排：气泡在上、文件卡在下，仍整体靠右 */
+.msg.user:has(.msg-files) {
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.msg-files {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  margin: 4px 2px 0;
+  max-width: 88%;
+}
+
+.msg-file {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 220px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--fg-soft);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.msg-file svg {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  opacity: 0.7;
+}
+
+.msg-file-name {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.msg-file-size {
+  flex: none;
+  color: var(--fg-faint);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---------- 用户消息附带的划词引用 ---------- */
@@ -303,7 +356,7 @@
 }
 
 .turn-time {
-  font-size: 11px;
+  font-size: 12.5px;
   color: var(--fg-faint);
   font-variant-numeric: tabular-nums;
 }
@@ -311,23 +364,24 @@
 .turn-btns {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 2px;
 }
 
 .turn-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 8px;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   background: none;
   color: var(--fg-faint);
-  font-size: 11.5px;
   line-height: 1.4;
   transition: color var(--dur), background var(--dur), border-color var(--dur);
 }
-.turn-btn svg { width: 12px; height: 12px; flex: 0 0 12px; }
+.turn-btn svg { width: 17px; height: 17px; flex: 0 0 17px; }
 .turn-btn:hover {
   color: var(--fg);
   background: var(--bg-hover);

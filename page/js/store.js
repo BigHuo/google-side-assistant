@@ -476,6 +476,35 @@ export function deleteSession(id) {
   });
 }
 
+/**
+ * 批量删除所有「没有绑定标签」的会话（连消息与摘要一起清）。
+ * 会话列表加载时会把标签已关闭的会话懒解绑，所以这里也会顺带清掉它们的残留。
+ * @returns {Promise<number[]>} 被删除的会话 id
+ */
+export function deleteUnboundSessions() {
+  return locked(async () => {
+    const list = await read(KEY_SESSIONS, []);
+    const gone = list.filter((s) => s.tab_id == null);
+    if (!gone.length) return [];
+
+    const rest = list.filter((s) => s.tab_id != null);
+    await write({ [KEY_SESSIONS]: rest });
+    await chrome.storage.local.remove(gone.flatMap((s) => [msgsKey(s.id), sumKey(s.id)]));
+
+    // 当前指针若指向被删会话，挪到剩下的最近一个；一个不剩就清空
+    const cur = await read(KEY_CURRENT, null);
+    if (cur != null && gone.some((s) => s.id === cur)) {
+      if (rest.length) {
+        const next = rest.slice().sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))[0];
+        await write({ [KEY_CURRENT]: next.id });
+      } else {
+        await chrome.storage.local.remove(KEY_CURRENT);
+      }
+    }
+    return gone.map((s) => s.id);
+  });
+}
+
 export async function getMessages(sessionId) {
   return read(msgsKey(sessionId), []);
 }

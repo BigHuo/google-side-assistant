@@ -185,6 +185,8 @@ async function readChunkSize() {
 /** 扫描可见的可交互元素并打上 data-sa-idx 编号，供后续按编号操作 */
 function saSnapshot(win) {
   const SEL = 'a[href],button,input,textarea,select,summary,[role="button"],[role="link"],[role="tab"],[role="menuitem"],[contenteditable="true"]';
+  // 正文容器候选：语义标签优先，兼容常见 CMS/公众号正文类名
+  const MAIN = "main, article, [role='main'], #js_content, .rich_media_content, .article-content, .post-content, .entry-content";
   const old = document.querySelectorAll("[data-sa-idx]");
   for (const el of old) el.removeAttribute("data-sa-idx");
 
@@ -195,23 +197,66 @@ function saSnapshot(win) {
     return s.visibility !== "hidden" && s.display !== "none" && s.opacity !== "0";
   };
 
-  const elements = [];
-  let i = 0;
+  /* 元素配额：正文区内的交互元素优先，其次是表单控件，最后才是导航/页脚链接。
+     否则导航链接会按 DOM 顺序吃满 120 个名额，正文或搜索结果里的链接拿不到编号。
+     最多扫描 800 个可见候选，避免超大页面上逐个量尺寸拖慢读取。 */
+  const cands = [];
   for (const el of document.querySelectorAll(SEL)) {
-    if (elements.length >= 120) break;
+    if (cands.length >= 800) break;
     if (!visible(el)) continue;
-    i += 1;
+    const control = /^(button|input|textarea|select|summary)$/i.test(el.tagName);
+    const rank = el.closest(MAIN) ? 0 : control ? 1 : 2;
+    cands.push({ el, rank });
+  }
+  cands.sort((a, b) => a.rank - b.rank); // 同档内保持 DOM 顺序（sort 稳定）
+  const kept = cands.slice(0, 120);
+
+  const elements = kept.map(({ el }, n) => {
+    const i = n + 1;
     el.setAttribute("data-sa-idx", String(i));
     const label = (el.innerText || el.value || el.getAttribute("placeholder") || el.getAttribute("aria-label") || el.getAttribute("title") || "")
       .replace(/\s+/g, " ").trim().slice(0, 50);
-    elements.push({
+    return {
       i,
       tag: el.tagName.toLowerCase(),
       type: el.getAttribute("type") || "",
       label,
       href: (el.getAttribute("href") || "").slice(0, 120),
-    });
+    };
+  });
+
+  /* 正文定位：优先语义主容器（main/article/[role=main]），直接去掉站点导航与页脚；
+     没有主容器时临时隐藏 nav/footer 再读 body（同一任务内恢复，不会闪屏）。
+     主容器须占整页文字的 25% 以上，避免在首页把一张卡片当成正文。
+     长度先用 textContent 估（不触发布局），最终取 innerText。 */
+  const lenOf = (el) => (el.textContent || "").length;
+  let best = null;
+  let bestLen = 0;
+  for (const el of document.querySelectorAll(MAIN)) {
+    const n = lenOf(el);
+    if (n > bestLen) {
+      best = el;
+      bestLen = n;
+    }
   }
+  let full = "";
+  if (document.body) {
+    const bodyLen = lenOf(document.body) || 1;
+    if (best && bestLen >= 600 && bestLen >= bodyLen * 0.25) {
+      full = best.innerText || "";
+    } else {
+      const hidden = [];
+      for (const el of document.querySelectorAll("nav, footer, [role='navigation'], [role='contentinfo']")) {
+        if (el.style.display !== "none") {
+          hidden.push([el, el.style.display]);
+          el.style.display = "none";
+        }
+      }
+      full = document.body.innerText || "";
+      for (const [el, d] of hidden) el.style.display = d;
+    }
+  }
+  full = full.replace(/\s+/g, " ").trim();
 
   /* 正文分段回传：短页面一次给全；长页面（论文等）每次往后推进一段，
      否则模型「滚动 + 再读」永远拿回开头同一段，把工具回合白白耗光。
@@ -219,7 +264,6 @@ function saSnapshot(win) {
      注意：本函数经 fn.toString() 注入页面执行，不能引用外部变量，
      分段长度的合法区间只能内联钳制（后台传参前也会先夹一次）。 */
   const WIN = Math.min(Math.max(Math.round(Number(win) || 12000), 2000), 30000);
-  const full = (document.body ? document.body.innerText : "").replace(/\s+/g, " ").trim();
   const st = (window.__saReadState = window.__saReadState || { from: 0 });
   let from = 0;
   if (full.length > WIN) {
@@ -243,6 +287,8 @@ function saSnapshot(win) {
     url: location.href,
     title: document.title,
     elements,
+    elementsTotal: cands.length,
+    elementsTruncated: cands.length > kept.length,
     text: full.slice(from, to),
     textTotal: full.length,
     textFrom: from,
@@ -291,11 +337,43 @@ function saFocus(sel) {
     游标，长页面连续调用会一段段往后走，而不是每次都从开头重复。 */
 function saExtract(arg) {
   const sel = arg ? arg.sel : "";
-  const el = sel ? document.querySelector(sel) : document.body;
-  if (!el) return null;
+  // 与 saSnapshot 保持同一组正文容器候选
+  const MAIN = "main, article, [role='main'], #js_content, .rich_media_content, .article-content, .post-content, .entry-content";
   // 同 saSnapshot：注入页面执行，钳制必须内联
   const WIN = Math.min(Math.max(Math.round(Number(arg && arg.win) || 12000), 2000), 30000);
-  const full = (el.innerText || el.textContent || "").replace(/\s+/g, " ").trim();
+  let full = "";
+  if (sel) {
+    const el = document.querySelector(sel);
+    if (!el) return null;
+    full = el.innerText || el.textContent || "";
+  } else if (document.body) {
+    /* 与 read_page 同一套正文定位：主容器优先，退而剔掉 nav/footer 再读 body */
+    const lenOf = (el) => (el.textContent || "").length;
+    let best = null;
+    let bestLen = 0;
+    for (const el of document.querySelectorAll(MAIN)) {
+      const n = lenOf(el);
+      if (n > bestLen) {
+        best = el;
+        bestLen = n;
+      }
+    }
+    const bodyLen = lenOf(document.body) || 1;
+    if (best && bestLen >= 600 && bestLen >= bodyLen * 0.25) {
+      full = best.innerText || "";
+    } else {
+      const hidden = [];
+      for (const el of document.querySelectorAll("nav, footer, [role='navigation'], [role='contentinfo']")) {
+        if (el.style.display !== "none") {
+          hidden.push([el, el.style.display]);
+          el.style.display = "none";
+        }
+      }
+      full = document.body.innerText || "";
+      for (const [el, d] of hidden) el.style.display = d;
+    }
+  }
+  full = full.replace(/\s+/g, " ").trim();
   const st = (window.__saReadState = window.__saReadState || { from: 0 });
   let from = 0;
   if (!sel) {
@@ -316,6 +394,47 @@ function saExtract(arg) {
     window.scrollTo({ top: Math.round((to / full.length) * maxTop), behavior: "smooth" });
   }
   return { text: full.slice(from, to), textTotal: full.length, textFrom: from, textTo: to };
+}
+
+/** 从必应结果页抽结构化条目（标题 / 真实网址 / 摘要），最多 10 条。
+    结果页 DOM 变化或抽取失败时返回空数组，调用方回退到 read_page 整页读取。
+    必应的站内跳转链接（/ck/a?u=a1...）在这里还原成目标网址，模型才能直接 goto。 */
+function saSearchResults() {
+  const unwrap = (href) => {
+    try {
+      const u = new URL(href, location.href);
+      if (/bing\.com$/i.test(u.hostname) && /^\/ck\/a/.test(u.pathname)) {
+        const b = u.searchParams.get("u") || "";
+        if (b.startsWith("a1")) {
+          let s = b.slice(2).replace(/-/g, "+").replace(/_/g, "/");
+          s += "=".repeat((4 - (s.length % 4)) % 4);
+          const real = atob(s);
+          if (/^https?:\/\//i.test(real)) return real;
+        }
+      }
+      return u.href;
+    } catch {
+      return href;
+    }
+  };
+
+  const out = [];
+  const seen = new Set();
+  for (const li of document.querySelectorAll("#b_results li.b_algo")) {
+    const a = li.querySelector("h2 a[href]") || li.querySelector("a[href]");
+    if (!a) continue;
+    const url = unwrap(a.href);
+    if (!/^https?:\/\//i.test(url) || seen.has(url)) continue;
+    seen.add(url);
+    const p = li.querySelector(".b_caption p, .b_snippet, .b_algoSlug, p");
+    out.push({
+      title: (a.innerText || "").replace(/\s+/g, " ").trim().slice(0, 160),
+      url,
+      snippet: (p ? p.innerText : "").replace(/\s+/g, " ").trim().slice(0, 300),
+    });
+    if (out.length >= 10) break;
+  }
+  return out;
 }
 
 function saScroll(dir) {
@@ -345,7 +464,9 @@ async function doReadPage(tabId) {
   return {
     ok: true,
     summary:
-      `已读取「${snap.title || snap.url}」（${snap.elements.length} 个可操作元素）` +
+      `已读取「${snap.title || snap.url}」（${snap.elements.length} 个可操作元素` +
+      (snap.elementsTruncated ? `，共 ${snap.elementsTotal} 个，已优先保留正文区` : "") +
+      "）" +
       (snap.textTotal
         ? `，正文共 ${snap.textTotal} 字，本次为第 ${snap.textFrom + 1}–${snap.textTo} 字` +
           (more ? "，再次读取可继续往后" : "（已到末尾）")
@@ -474,9 +595,28 @@ async function doSearch(wantTabId, args) {
   }
 
   glowSet(tabId, true); // 到了可操作页面把流光点起（后续动作自愈续亮；设置关了则不亮）
+
+  /* 落地后直接抽结构化结果：模型不必再为「结果页」花一轮 read_page，
+     也不会把导航、广告当成搜索结果。抽不到就退回原来的整页读取路径。 */
+  let results = [];
+  if (landed) {
+    for (let attempt = 0; attempt < 2 && !results.length; attempt++) {
+      try {
+        results = (await runPage(tabId, saSearchResults)) || [];
+      } catch {
+        break;
+      }
+      if (!results.length && attempt === 0) await sleep(500);
+    }
+  }
+  const brief = q.slice(0, 30);
   return {
     ok: true,
-    summary: `已搜索「${q.slice(0, 30)}」${landed ? "" : "（页面仍在加载）"}，用 read_page 读取结果`,
+    query: q,
+    summary: results.length
+      ? `已搜索「${brief}」，命中 ${results.length} 条；先看标题与摘要，需要细节再 goto 打开其中一条`
+      : `已搜索「${brief}」${landed ? "" : "（页面仍在加载）"}，用 read_page 读取结果`,
+    ...(results.length ? { results } : {}),
   };
 }
 

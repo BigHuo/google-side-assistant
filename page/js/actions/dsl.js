@@ -125,10 +125,10 @@ const REGISTRY = [
     desc: "把当前标签页带到必应搜索结果页",
     declaration: {
       description:
-        "联网搜索：把当前标签页导航到必应（cn.bing.com）的搜索结果页并等它加载完成，之后用 read_page / extract 读取结果。需要最新网络信息（新闻、价格、版本号等）时用；当前页面读不了或不可操作（内置页、读取报错）时，也用它先把标签带到可操作的页面。",
+        "联网搜索：把当前标签页导航到必应（cn.bing.com）搜索，并直接返回结构化结果（title / url / snippet，最多 10 条）。先看标题与摘要判断相关性，需要细节时用 goto 打开其中一条再 read_page；只有结果为空时才用 read_page 读结果页。搜索词用 2~5 个关键词，不要整句。需要最新网络信息（新闻、价格、版本号等）时用；当前页面读不了或不可操作（内置页、读取报错）时，也用它先把标签带到可操作的页面。",
       parameters: {
         type: "object",
-        properties: { query: { type: "string", description: "搜索词" } },
+        properties: { query: { type: "string", description: "搜索词，2~5 个关键词" } },
         required: ["query"],
       },
     },

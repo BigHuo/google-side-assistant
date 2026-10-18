@@ -34,7 +34,10 @@
     <div class="sess" id="sessPanel">
       <div class="sess-head">
         <span class="sess-title">会话</span>
-        <button class="btn" id="btnSessNew" type="button">新建会话</button>
+        <span class="sess-head-acts">
+          <button class="btn ghost" id="btnSessClean" type="button" title="清理没有绑定标签的会话">清理</button>
+          <button class="btn" id="btnSessNew" type="button">新建会话</button>
+        </span>
       </div>
       <div class="sess-list" id="sessList"></div>
     </div>
@@ -65,6 +68,9 @@
         <div class="cmd-bar" id="cmdBar" hidden></div>
         <textarea id="input" rows="1" placeholder="输入消息，按 Enter 发送，Shift + Enter 换行"></textarea>
         <div class="toolbar">
+          <button class="icon-btn sm" type="button" id="btnFile" title="上传文件（文本类，≤500KB）">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M11.8 7.2 7.5 11.5a2.6 2.6 0 0 1-3.7-3.7l4.9-4.9a1.7 1.7 0 1 1 2.4 2.4L6.3 10a.8.8 0 0 1-1.2-1.2l4.4-4.4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
           <button class="icon-btn sm" type="button" id="btnImage" title="插入图片" disabled>
             <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="3" width="12" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="5.8" cy="6.4" r="1.1" fill="currentColor"/><path d="M3 11.4 6.4 8.4l2.2 2 1.8-1.6L13 11.6" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </button>
@@ -77,6 +83,7 @@
               <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="3.4" cy="8" r="1.2" fill="currentColor"/><circle cx="8" cy="8" r="1.2" fill="currentColor"/><circle cx="12.6" cy="8" r="1.2" fill="currentColor"/></svg>
             </button>
             <div class="more-menu" id="moreMenu" hidden role="menu">
+              <button type="button" role="menuitem" id="miFile">上传文件</button>
               <button type="button" role="menuitem" id="miImage" disabled>插入图片</button>
               <button type="button" role="menuitem" id="miSkills">截图</button>
             </div>
@@ -110,6 +117,7 @@
     </footer>
 
     <input type="file" id="fileImage" accept="image/*" multiple hidden>
+    <input type="file" id="fileFile" accept="text/*,.md,.markdown,.json,.jsonl,.csv,.tsv,.log,.xml,.yaml,.yml,.toml,.ini,.conf,.cfg,.js,.mjs,.cjs,.ts,.tsx,.jsx,.html,.htm,.css,.scss,.less,.py,.java,.kt,.go,.rs,.rb,.php,.c,.h,.cpp,.hpp,.cs,.swift,.sh,.bash,.zsh,.sql,.vue,.svelte" multiple hidden>
   </div>
 
   <!-- 设置页：整页视图，铺满面板覆盖对话区；点左上角返回回到对话 -->
