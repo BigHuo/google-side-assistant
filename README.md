@@ -11,7 +11,7 @@
 所有会话与配置只存在本地，模型 API 由你自己登记、直连供应商——没有中间服务器，没有账号体系。
 
 <p align="center">
-  <img src="docs/screenshots/chat-hero.png" alt="灵阅AI助手对话界面">
+  <img src="docs/screenshots/image.png" alt="灵阅AI助手对话界面">
 </p>
 
 ## 它解决什么问题
