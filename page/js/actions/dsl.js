@@ -108,7 +108,7 @@ const REGISTRY = [
     label: "打开网址",
     desc: "把当前标签页导航到指定网址",
     declaration: {
-      description: "在当前标签页打开一个网址。",
+      description: "在当前标签页打开一个网址。当前是内置页（新标签页、chrome:// 等）时同样可用：会直接用标签导航离开内置页，之后就能正常 read_page。",
       parameters: {
         type: "object",
         properties: { value: { type: "string", description: "完整网址或域名" } },
@@ -164,6 +164,18 @@ const REGISTRY = [
       const t = targetText(a);
       return t ? `读取元素 ${t} 的文字` : "读取页面文字";
     },
+  },
+  {
+    name: "get_time",
+    kind: "api",
+    readOnly: true,
+    declaration: {
+      description:
+        "获取当前的本地日期与时间（含星期、时区、ISO 8601 与 Unix 时间戳）。模型自身没有实时时钟，遇到「今天 / 现在 / 本周 / 还有几天」这类问题，或需要写日期、星期时，先调用它，不要凭记忆猜。",
+      parameters: { type: "object", properties: {}, required: [] },
+    },
+    validate: () => true,
+    describe: () => "获取当前日期与时间",
   },
   {
     name: "search_papers",

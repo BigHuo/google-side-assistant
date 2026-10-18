@@ -51,6 +51,20 @@ SHIM = """<script>
       if (msg && msg.type === "PAGE_ACTION" && msg.name === "read_page") {
         return { ok: true, summary: "dev 桩读取完成（非真实页面）", text: "这是 dev 桩返回的页面正文，仅用于本地预览。" };
       }
+      if (msg && msg.type === "API_ACTION" && msg.name === "get_time") {
+        // 与 background.js 的 get_time 保持同样的返回形状（预览/测试用）
+        var d = new Date();
+        var p = function (n) { return String(n).padStart(2, "0"); };
+        var ymd = d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+        var hms = p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds());
+        var week = "日一二三四五六"[d.getDay()];
+        var tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "本地时区";
+        return {
+          ok: true,
+          summary: ymd + " " + hms + " 星期" + week + "（" + tz + "）",
+          text: "日期：" + ymd + "（星期" + week + "）\\n时间：" + hms + "\\n时区：" + tz + "\\nISO 8601：" + d.toISOString(),
+        };
+      }
       throw new Error("dev 预览：没有 background，动作执行不可用");
     },
     lastError: null,

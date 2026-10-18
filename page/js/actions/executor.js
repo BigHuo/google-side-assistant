@@ -16,7 +16,9 @@ export function capabilities() {
  * @param {object} [args] 工具参数
  * @param {{tabId?: number|null}} [ctx] 发起时刻锁定的标签；后台全程用它，
  *   用户生成中途切到别的标签也不会把操作落到别的页面上
- * @returns {Promise<{ok: boolean, error?: string, summary?: string, page?: object, text?: string}>}
+ * @returns {Promise<{ok: boolean, error?: string, summary?: string, soft?: boolean, notice?: string, page?: object, text?: string}>}
+ *   soft=true 表示可自愈的过程状态（如内置页需要改走导航）：error 给模型看，
+ *   notice 给用户看，面板用中性色呈现，不当失败。
  */
 export async function runAction(name, args = {}, { tabId = null } = {}) {
   const v = validateArgs(name, args);

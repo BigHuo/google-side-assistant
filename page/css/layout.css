@@ -645,9 +645,9 @@
 }
 .sess-row:hover { background: var(--bg-hover); }
 .sess-row.on { background: var(--brand-soft); border-color: var(--brand); }
-/* 绑定在别的页面上的会话：这边打不开，灰显 + 禁用指针，归属看右侧 chip */
-.sess-row.foreign .sess-main { cursor: not-allowed; }
-.sess-row.foreign { opacity: 0.55; }
+/* 绑定在别的标签页上的会话：点击会切到那个标签，稍微压暗以区归属，归属看右侧 chip */
+.sess-row.foreign .sess-main { cursor: pointer; }
+.sess-row.foreign { opacity: 0.78; }
 
 .sess-main {
   flex: 1 1 auto;

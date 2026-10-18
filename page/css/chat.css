@@ -427,6 +427,9 @@
 
 .step[data-state="pending"] { border-color: rgba(224, 163, 60, 0.5); color: var(--fg); }
 .step[data-state="fail"] { border-color: rgba(229, 100, 91, 0.5); color: var(--danger); }
+/* 可自愈的中途状态（内置页拦下、即将改走导航等）：是过程说明，不是失败，别用红色 */
+.step[data-state="note"] .step-dot { background: var(--brand); }
+.step[data-state="note"] { border-color: var(--line); color: var(--fg-soft); }
 
 @keyframes step-pulse {
   0%, 100% { opacity: 1; }

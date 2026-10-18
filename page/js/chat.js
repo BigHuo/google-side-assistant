@@ -40,6 +40,21 @@ export async function currentTab() {
   }
 }
 
+/** 切到指定标签页（跨窗口时顺带聚焦窗口）。标签已关闭返回 false */
+export async function activateTab(tabId) {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    if (!tab || tab.id == null) return false;
+    await chrome.tabs.update(tabId, { active: true });
+    if (tab.windowId != null && chrome.windows?.update) {
+      await chrome.windows.update(tab.windowId, { focused: true });
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** 切标签 / 关标签的跟随逻辑 */
 function watchTabs() {
   if (!chrome.tabs?.onActivated?.addListener) return;
@@ -859,8 +874,9 @@ function filePrefix(fs) {
         const text = String(f.text || "");
         const cut = text.length > FILE_TEXT_LIMIT;
         return (
-          `【文件：${f.name}｜${formatBytes(f.size)}】\n${text.slice(0, FILE_TEXT_LIMIT)}` +
-          (cut ? "\n…（内容过长，已截断）" : "")
+          `【附件：${f.name}｜以下为完整正文】\n${text.slice(0, FILE_TEXT_LIMIT)}` +
+          (cut ? "\n…（内容过长，已截断）" : "") +
+          `\n【附件结束：${f.name}】`
         );
       })
       .join("\n\n") + "\n\n"
@@ -951,6 +967,20 @@ function buildMessages(kept, summary, droppedCount) {
     head.push({ role: "system", content: `（更早的 ${droppedCount} 条对话已超出上下文预算被省略。）` });
   }
   return [...head, ...kept];
+}
+
+/** 轻量页面信息：只给标题与网址，让模型先判断问题是否与页面相关，
+    免得「与页面无关」的提问也去 read_page 拉一遍全文、白烧上下文 */
+function pageHint(tab) {
+  const url = String(tab?.url || "");
+  if (!url) return null;
+  const title = String(tab?.title || "").trim();
+  const head = `当前标签页：${title || "（无标题）"}\n${url}`;
+  // 内置页读不了：提前说清楚，模型就不会先撞一次 read_page 再补救
+  if (!/^https?:/i.test(url)) {
+    return head + "\n（这是浏览器内置页面，read_page / click 等无法直接操作；需要网页内容时先用 goto 打开目标网址，或用 search_web 搜索）";
+  }
+  return head;
 }
 
 /**
@@ -1099,7 +1129,8 @@ export async function send(text, pics = [], qs = [], hidden = "", cmd = "", atta
 
   // 点击发送那一刻的页面：本轮会话归属与所有页面工具都锁定它。
   // 模型出工具调用往往要等几秒，期间用户切去别的标签，也不能把「总结当前页面」落到别的页面上。
-  const sendTabId = (await currentTab())?.id ?? null;
+  const sendTab = await currentTab();
+  const sendTabId = sendTab?.id ?? null;
 
   // 先做会话归属检查：会话跟当前标签对不上时可能换/建会话，之后的 messages 才是最终落点
   await followTabOnSend(sendTabId);
@@ -1222,6 +1253,8 @@ export async function send(text, pics = [], qs = [], hidden = "", cmd = "", atta
   try {
     // 组装历史：超过压缩阈值就先跑一次压缩调用（步骤卡片会记在气泡前面）
     const conversation = await buildConversation(settings, controller.signal, reply.blocks, reply.id);
+    const hint = pageHint(sendTab);
+    if (hint) conversation.unshift({ role: "system", content: hint }); // 每轮现取，不落库
 
     let round = 0;
     for (; round < maxRounds; round++) {
@@ -1291,7 +1324,8 @@ export async function send(text, pics = [], qs = [], hidden = "", cmd = "", atta
         } catch (err) {
           res = { ok: false, error: (err && err.message) || "执行失败" };
         }
-        step.set(res.ok ? "done" : "fail", res.summary || res.error || "");
+        // 软失败（如内置页拦下后即将改走导航）是过程提示，用中性色，不当红色报错
+        step.set(res.ok ? "done" : res.soft ? "note" : "fail", res.notice || res.summary || res.error || "");
         conversation.push(toolResult(c, res));
       }
     }

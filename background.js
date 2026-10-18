@@ -108,12 +108,38 @@ chrome.debugger.onDetach.addListener((source) => {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/** 内置页判定：chrome:// / edge:// / file:// 等无法注入脚本的页面。
+    面板页被当标签打开、新标签页等场景都会命中。 */
+const INTERNAL_URL = /^(chrome|edge|about|devtools|chrome-extension|view-source|file):/i;
+
+/** 可自愈的「软失败」：UI 展示成中性提示而不是红色报错；
+    error 仍然写给模型看，带上可执行的下一步。 */
+function softError(message, notice) {
+  const e = new Error(message);
+  e.soft = true;
+  e.notice = notice;
+  return e;
+}
+
+/** 统一的失败回包：软失败额外带 soft / notice，面板据此换文案和配色 */
+function failPayload(err) {
+  const out = { ok: false, error: (err && err.message) || String(err) };
+  if (err && err.soft) {
+    out.soft = true;
+    out.notice = err.notice || "";
+  }
+  return out;
+}
+
 /** 校验一个标签能否被工具操作（存在、非内置页面），返回它的 id */
 function assertOperableTab(tab) {
   if (!tab || tab.id == null) throw new Error("没有找到正在浏览的标签页");
-  const url = tab.url || "";
-  if (/^(chrome|edge|about|devtools|chrome-extension|view-source|file):/i.test(url)) {
-    throw new Error("内置界面不支持");
+  if (INTERNAL_URL.test(tab.url || "")) {
+    // 给模型一条可执行的自救路径；给用户一句不带火气的过程说明
+    throw softError(
+      "当前是内置页面（chrome:// 等），无法直接读取或操作；请先调用 goto 打开目标网址，或用 search_web 搜索",
+      "当前是内置页面，即将打开目标网页再继续",
+    );
   }
   return tab.id;
 }
@@ -521,10 +547,17 @@ async function doScroll(tabId, args) {
   return { ok: true, summary: `已${word}滚动` };
 }
 
-async function doGoto(tabId, args, inPage = false) {
+/** goto 系列共用的网址归一化：缺协议就补 https:// */
+function gotoUrl(args) {
   let url = String((args && (args.value || args.url)) || "").trim();
-  if (!url) return { ok: false, error: "缺少网址" };
+  if (!url) return "";
   if (!/^https?:\/\//i.test(url)) url = "https://" + url;
+  return url;
+}
+
+async function doGoto(tabId, args, inPage = false) {
+  const url = gotoUrl(args);
+  if (!url) return { ok: false, error: "缺少网址" };
 
   await cdp(tabId, "Page.enable");
   await cdp(tabId, "Page.navigate", { url });
@@ -549,30 +582,66 @@ async function doGoto(tabId, args, inPage = false) {
   return { ok: true, summary: `${inPage ? "已在本页打开" : "已打开"}${title ? "「" + title + "」" : " " + url}` };
 }
 
+/** goto 在内置页上的救生索：CDP 接不上，改用 tabs.update 导航（与 search_web 同一条通道） */
+async function doGotoByTabs(tabId, args) {
+  const url = gotoUrl(args);
+  if (!url) return { ok: false, error: "缺少网址" };
+
+  await chrome.tabs.update(tabId, { url });
+
+  // 内置页不能注入脚本，只能靠 tabs.get 等状态；要等它真正离开内置页才算落地
+  const deadline = Date.now() + 15000;
+  let tab = null;
+  while (Date.now() < deadline) {
+    await sleep(400);
+    try {
+      tab = await chrome.tabs.get(tabId);
+    } catch {
+      return { ok: false, error: "页面在打开途中被关闭了" };
+    }
+    if (tab.status === "complete" && !INTERNAL_URL.test(tab.url || "")) break;
+  }
+  const title = String(tab?.title || "").trim();
+  return { ok: true, summary: `已打开${title ? "「" + title + "」" : " " + url}` };
+}
+
+/** 解析目标标签（不校验可操作性）：带 tabId 就锁定它，否则取当前标签。
+    内置页也放行——goto / search_web 不依赖 CDP，用 tabs.update 导航。 */
+async function resolveTargetTab(wantTabId) {
+  if (wantTabId != null) {
+    let tab = null;
+    try {
+      tab = await chrome.tabs.get(wantTabId);
+    } catch {
+      /* 标签已关闭，下面统一报错 */
+    }
+    if (!tab || tab.id == null) throw new Error("发起操作的那个页面已经关闭了");
+    return tab;
+  }
+  const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  if (!tab || tab.id == null) throw new Error("没有找到正在浏览的标签页");
+  return tab;
+}
+
+/** goto 入口：内置页直接走 tabs.update，普通页仍走 CDP */
+async function doGotoEntry(wantTabId, args) {
+  const tab = await resolveTargetTab(wantTabId);
+  if (INTERNAL_URL.test(tab.url || "")) return doGotoByTabs(tab.id, args);
+  return doGoto(assertOperableTab(tab), args);
+}
+
 /* ---------- 联网搜索：内置页的救生索 ----------
-   面板落在内置界面（chrome:// 等）上时，read_page / goto 全会被拦；
-   搜索这条通道改用 chrome.tabs.update 导航——不走 CDP，内置页也允许——
-   直接跳到必应结果页，加载完再交回常规工具读取。 */
+   面板落在内置界面（chrome:// 等）上时，read_page 会被拦；
+   搜索与 goto 改用 chrome.tabs.update 导航——不走 CDP，内置页也允许——
+   直接跳到目标页，加载完再交回常规工具读取。 */
 
 const BING_SEARCH = "https://cn.bing.com/search?q=";
 
 async function doSearch(wantTabId, args) {
   const q = String((args && (args.query || args.value)) || "").trim();
   if (!q) return { ok: false, error: "缺少搜索词 query" };
-  // 解析目标标签：特意不走 assertOperableTab——内置页正是这条通道要救的场景
-  let tabId = null;
-  if (wantTabId != null) {
-    try {
-      tabId = (await chrome.tabs.get(wantTabId)).id;
-    } catch {
-      /* 标签已不存在 */
-    }
-    if (tabId == null) throw new Error("发起操作的那个页面已经关闭了");
-  } else {
-    const [t] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-    if (!t || t.id == null) throw new Error("没有找到正在浏览的标签页");
-    tabId = t.id;
-  }
+  // 特意不校验可操作性——内置页正是这条通道要救的场景
+  const tabId = (await resolveTargetTab(wantTabId)).id;
 
   await chrome.tabs.update(tabId, { url: BING_SEARCH + encodeURIComponent(q) });
 
@@ -750,6 +819,8 @@ async function runAction(name, args, wantTabId = null) {
   if (name === "wait") return doWait(args);
   // 搜索允许落在内置页上：内部自己解析标签，用 tabs.update 把它带到必应结果页
   if (name === "search_web") return doSearch(wantTabId, args);
+  // goto 同样要能在内置页上用：CDP 接不上时退回 tabs.update 导航
+  if (name === "goto") return doGotoEntry(wantTabId, args);
   // 面板带上了发起时刻的 tabId 就全程锁定它；没带（旧面板 / 翻译等旁路）才实时取当前标签
   const tabId = wantTabId != null ? await pinnedTabId(wantTabId) : await currentTabId();
   // 流光自愈：标记在亮但页面刚导航过（goto 会杀掉注入的 DOM），重新挂一遍
@@ -759,7 +830,6 @@ async function runAction(name, args, wantTabId = null) {
     case "click": return doClick(tabId, args);
     case "type": return doType(tabId, args);
     case "scroll": return doScroll(tabId, args);
-    case "goto": return doGoto(tabId, args);
     case "extract": return doExtract(tabId, args);
     default: return { ok: false, error: "不支持的操作：" + name };
   }
@@ -978,7 +1048,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === "PAGE_ACTION") {
     runAction(msg.name, msg.args, msg.tabId)
       .then(sendResponse)
-      .catch((err) => sendResponse({ ok: false, error: (err && err.message) || String(err) }));
+      .catch((err) => sendResponse(failPayload(err)));
     return true; // 异步响应，保持通道打开
   }
 
@@ -992,7 +1062,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === "API_ACTION") {
     runApiAction(msg.name, msg.args)
       .then(sendResponse)
-      .catch((err) => sendResponse({ ok: false, error: (err && err.message) || String(err) }));
+      .catch((err) => sendResponse(failPayload(err)));
     return true;
   }
 
@@ -1043,7 +1113,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 /* ============================================================
    数据动作：API_ACTION
    ------------------------------------------------------------
-   与页面动作分离：不碰用户标签页，只向外部数据源发检索请求。
+   与页面动作分离：不碰用户标签页，只做数据类动作（外部检索，或读取本地时钟这类纯数据）。
    限流预算（对齐 academic-search 的规范）：429/503 遵守 Retry-After，
    无提示时有界退避；单请求最多重试 2 次，总等待预算 30 秒，
    预算耗尽放弃该来源并如实上报，绝不臆造结果。 */
@@ -1234,7 +1304,31 @@ async function searchPapers(a = {}) {
   };
 }
 
+/** get_time：本地时钟，不触网。返回给人看的一句摘要 + 给模型读的结构化正文 */
+function currentTimeResult() {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  const ymd = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  const hms = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  const weekday = "星期" + "日一二三四五六"[now.getDay()];
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "本地时区";
+  const off = -now.getTimezoneOffset();
+  const utc = `UTC${off >= 0 ? "+" : "-"}${pad(Math.floor(Math.abs(off) / 60))}:${pad(Math.abs(off) % 60)}`;
+  return {
+    ok: true,
+    summary: `${ymd} ${hms} ${weekday}（${tz}）`,
+    text: [
+      `日期：${ymd}（${weekday}）`,
+      `时间：${hms}`,
+      `时区：${tz}（${utc}）`,
+      `ISO 8601：${now.toISOString()}`,
+      `Unix 时间戳（秒）：${Math.floor(now.getTime() / 1000)}`,
+    ].join("\n"),
+  };
+}
+
 async function runApiAction(name, args = {}) {
+  if (name === "get_time") return currentTimeResult();
   if (name === "search_papers") return searchPapers(args);
   return { ok: false, error: "未知数据动作：" + name };
 }
@@ -1267,9 +1361,6 @@ async function shotToClipboard(dataUrl, tabId) {
   return result;
 }
 
-
-/** 内置页判定：面板页被当标签打开等情况会命中 */
-const INTERNAL_URL = /^(chrome|edge|about|devtools|chrome-extension|view-source|file):/i;
 
 /** 解析截图目标标签：面板带 tabId 就直接用（面板已过滤内置页），没带才自己找。
     找到的全是内置页时给出针对性提示——最常见原因是助手被当成标签页打开了 */

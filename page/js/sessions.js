@@ -3,7 +3,7 @@
 
 import { $, toast } from "./util.js";
 import * as store from "./store.js";
-import { newSession, switchSession, removeSession, renameSession, isBusy, currentTab, currentId } from "./chat.js";
+import { newSession, switchSession, removeSession, renameSession, isBusy, currentTab, currentId, activateTab } from "./chat.js";
 
 const RENAME_SVG =
   '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10.4 2.6l3 3-7.4 7.4-3.6.6.6-3.6z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>';
@@ -140,7 +140,7 @@ async function loadSessions() {
   const cur = currentId(); // 面板内存态：草稿（null）时列表里不亮任何行
   const list = await store.listSessions();
   const tabs = await tabInfoMap(list);
-  const here = (await currentTab())?.id ?? null; // 当前标签：绑在别的标签上的会话这边打不开
+  const here = (await currentTab())?.id ?? null; // 当前标签：绑在别的标签上的会话点了会切过去
 
   box.textContent = "";
   if (!list.length) {
@@ -161,7 +161,7 @@ function row(s, active, tab, foreign = false) {
 
   const el = document.createElement("div");
   el.className = "sess-row" + (active ? " on" : "") + (foreign ? " foreign" : "");
-  if (foreign) el.title = "这个会话属于另一个页面，切到那个页面再打开它";
+  if (foreign) el.title = "这个会话属于另一个标签页，点击切换过去";
 
   const main = document.createElement("button");
   main.type = "button";
@@ -176,7 +176,7 @@ function row(s, active, tab, foreign = false) {
     // 会话绑定的标签：favicon + 标题前几个字，一眼看出会话归属哪个页面
     const chip = document.createElement("span");
     chip.className = "sess-tab";
-    chip.title = `绑定标签：${tab.title}`;
+    chip.title = `绑定标签：${tab.title}（点击切换）`;
     if (tab.favIconUrl) {
       const img = document.createElement("img");
       img.src = tab.favIconUrl;
@@ -196,7 +196,13 @@ function row(s, active, tab, foreign = false) {
       toast("正在生成，先停止再切换会话");
       return;
     }
-    // 切换被拒（会话属于别的页面）时提示已由 switchSession 给出，抽屉留着让用户看清归属
+    // 绑定标签还活着：直接切过去，那边面板会跟着恢复这个会话
+    if (foreign && (await activateTab(s.tab_id))) {
+      closePanel();
+      return;
+    }
+    // 标签刚好被关掉：解绑后按普通会话打开
+    if (foreign) await store.unbindTab(s.tab_id);
     if (await switchSession(s.id)) closePanel();
   });
   el.appendChild(main);
